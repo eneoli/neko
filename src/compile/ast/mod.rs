@@ -1,6 +1,6 @@
-use int_expr::IntExpr;
+use int_literal::IntLiteral;
 
-pub mod int_expr;
+pub mod int_literal;
 
 pub type SourcePos = core::ops::Range<usize>;
 
@@ -11,7 +11,7 @@ pub enum Type {
 
 #[derive(Clone, Debug)]
 pub enum Expr {
-    Int(IntExpr, SourcePos),
+    Int(IntLiteral, SourcePos),
     Ident(String, SourcePos),
     Unary(Op, Box<Expr>),
     Binary(Op, Box<Expr>, Box<Expr>),

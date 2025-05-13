@@ -9,6 +9,7 @@ use crate::compile::ast::Op;
 use crate::compile::ast::SourcePos;
 use crate::compile::ast::Stmt;
 use crate::compile::ast::Type;
+use crate::compile::ast::int_literal::IntLiteral;
 use crate::compile::parser::lex::Token;
 
 type ErrorParserExtra<'src> = extra::Err<Rich<'src, Token<'src>, SourcePos>>;
@@ -22,10 +23,8 @@ where
 
     recursive(|expr| {
         let atomic_expr = choice((
-            num.map_with(|(value, base), ctx| Expr::Int {
-                value: value.to_string(),
-                base,
-                span: ctx.span(),
+            num.map_with(|(value, base), ctx| {
+                Expr::Int(IntLiteral::new(value.to_string(), base), ctx.span())
             }),
             ident.map_with(|ident, ctx| Expr::Ident(ident.to_string(), ctx.span())),
             expr.clone()

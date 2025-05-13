@@ -3,14 +3,14 @@ use std::num::IntErrorKind;
 use crate::compile::semantic::SemanticError;
 
 #[derive(Debug, Clone)]
-pub struct IntExpr {
+pub struct IntLiteral {
     value: String,
     base: u32,
 }
 
-impl IntExpr {
-    pub fn new(value: String, base: u32) -> IntExpr {
-        IntExpr { value, base }
+impl IntLiteral {
+    pub fn new(value: String, base: u32) -> IntLiteral {
+        IntLiteral { value, base }
     }
 
     pub fn parse(&self) -> Result<u32, SemanticError> {
