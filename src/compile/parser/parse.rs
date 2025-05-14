@@ -2,6 +2,7 @@ use chumsky::input::ValueInput;
 use chumsky::prelude::*;
 use std::collections::HashMap;
 
+use crate::compile::ast::AST;
 use crate::compile::ast::AssignOp;
 use crate::compile::ast::Expr;
 use crate::compile::ast::FunctionDecl;
@@ -151,18 +152,18 @@ where
         })
 }
 
-pub fn program_parser<'src, I>()
--> impl Parser<'src, I, HashMap<String, FunctionDecl>, ErrorParserExtra<'src>>
+pub fn program_parser<'src, I>() -> impl Parser<'src, I, AST, ErrorParserExtra<'src>>
 where
     I: ValueInput<'src, Token = Token<'src>, Span = SourcePos>,
 {
     // TODO multiple functions with same name
     function_parser()
-        .repeated()
-        .collect()
-        .map(|fx: Vec<FunctionDecl>| {
-            fx.into_iter()
-                .map(|f| (f.name.clone(), f))
-                .collect::<HashMap<_, _>>()
-        })
+        // .repeated()
+        // .collect()
+        // .map(|fx: Vec<FunctionDecl>| {
+        // fx.into_iter()
+        // .map(|f| (f.name.clone(), f))
+        // .collect::<HashMap<_, _>>()
+        // })
+        .map(|fun| AST::Block(fun.body, fun.src_pos))
 }

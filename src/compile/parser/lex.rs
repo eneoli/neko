@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use chumsky::prelude::*;
 
 use super::Spanned;
@@ -5,7 +7,7 @@ use super::Spanned;
 #[derive(Clone, Debug, PartialEq)]
 #[allow(non_camel_case_types)]
 pub enum Token<'src> {
-    IDENT(&'src str),
+    IDENT(Cow<'src, str>),
     STRUCT,
     IF,
     ELSE,
@@ -27,7 +29,7 @@ pub enum Token<'src> {
     VOID,
     CHAR,
     STRING,
-    NUM { value: &'src str, base: u32 },
+    NUM { value: Cow<'src, str>, base: u32 },
     L_ROUND,
     R_ROUND,
     L_CURLY,
@@ -46,16 +48,71 @@ pub enum Token<'src> {
     ASSIGN_MOD,
 }
 
+impl<'a> Token<'a> {
+    pub fn into_owned<'b>(&'a self) -> Token<'b> {
+        match self.clone() {
+            Token::IDENT(str) => Token::IDENT(Cow::Owned(str.clone().into_owned())),
+            Token::NUM { value, base } => Token::NUM {
+                value: Cow::Owned(value.clone().into_owned()),
+                base: base.clone(),
+            },
+            Token::STRUCT => Token::STRUCT,
+            Token::IF => Token::IF,
+            Token::ELSE => Token::ELSE,
+            Token::WHILE => Token::WHILE,
+            Token::FOR => Token::FOR,
+            Token::CONTINUE => Token::CONTINUE,
+            Token::BREAK => Token::BREAK,
+            Token::RETURN => Token::RETURN,
+            Token::ASSERT => Token::ASSERT,
+            Token::TRUE => Token::TRUE,
+            Token::FALSE => Token::FALSE,
+            Token::NULL => Token::NULL,
+            Token::PRINT => Token::PRINT,
+            Token::READ => Token::READ,
+            Token::ALLOC => Token::ALLOC,
+            Token::ALLOC_ARRAY => Token::ALLOC_ARRAY,
+            Token::INT => Token::INT,
+            Token::BOOL => Token::BOOL,
+            Token::VOID => Token::VOID,
+            Token::CHAR => Token::CHAR,
+            Token::STRING => Token::STRING,
+            Token::L_ROUND => Token::L_ROUND,
+            Token::R_ROUND => Token::R_ROUND,
+            Token::L_CURLY => Token::L_CURLY,
+            Token::R_CURLY => Token::R_CURLY,
+            Token::SEMICOLON => Token::SEMICOLON,
+            Token::EQ => Token::EQ,
+            Token::PLUS => Token::PLUS,
+            Token::MINUS => Token::MINUS,
+            Token::STAR => Token::STAR,
+            Token::SLASH => Token::SLASH,
+            Token::PERCENT => Token::PERCENT,
+            Token::ASSIGN_ADD => Token::ASSIGN_ADD,
+            Token::ASSIGN_SUB => Token::ASSIGN_SUB,
+            Token::ASSIGN_MULT => Token::ASSIGN_MULT,
+            Token::ASSIGN_DIV => Token::ASSIGN_DIV,
+            Token::ASSIGN_MOD => Token::ASSIGN_MOD,
+        }
+    }
+}
+
 type ErrorParserExtra<'src> = extra::Err<Rich<'src, char, SimpleSpan>>;
 
 fn decimal<'src>() -> impl Parser<'src, &'src str, Token<'src>, ErrorParserExtra<'src>> {
-    text::int(10).map(|value: &'src str| Token::NUM { value, base: 10 })
+    text::int(10).map(|value: &'src str| Token::NUM {
+        value: Cow::Borrowed(value),
+        base: 10,
+    })
 }
 
 fn hexadecimal<'src>() -> impl Parser<'src, &'src str, Token<'src>, ErrorParserExtra<'src>> {
     just("0x")
         .ignore_then(text::int(16))
-        .map(|value: &'src str| Token::NUM { value, base: 16 })
+        .map(|value: &'src str| Token::NUM {
+            value: Cow::Borrowed(value),
+            base: 16,
+        })
 }
 
 pub fn lexer<'src>()
@@ -82,7 +139,7 @@ pub fn lexer<'src>()
         "void" => Token::VOID,
         "char" => Token::CHAR,
         "string" => Token::STRING,
-        _ => Token::IDENT(ident),
+        _ => Token::IDENT(Cow::Borrowed(ident)),
     });
 
     let lround = just("(").to(Token::L_ROUND);
