@@ -5,8 +5,6 @@ use thiserror::Error;
 
 use crate::compile::{parser::lex::Token, semantic::SemanticError};
 
-pub mod reporting;
-
 pub struct ExitCode(u8);
 
 impl ExitCode {
