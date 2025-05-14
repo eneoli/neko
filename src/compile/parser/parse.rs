@@ -1,6 +1,5 @@
 use chumsky::input::ValueInput;
 use chumsky::prelude::*;
-use std::collections::HashMap;
 
 use crate::compile::ast::AST;
 use crate::compile::ast::AssignOp;

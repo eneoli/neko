@@ -106,7 +106,7 @@ impl Compiler {
         };
 
         let asm = asm::generate_assembly();
-        asm::assemble(asm.as_str(), &out_path);
+        asm::assemble(asm.as_str(), &out_path)?;
 
         Ok(self)
     }
