@@ -102,10 +102,14 @@ impl Compiler {
 
     fn assemble(&mut self) -> Result<&mut Self, NekoError> {
         let Some(ref out_path) = self.out_path else {
-            pipeline_error!("No output oath provided.")
+            pipeline_error!("No output path provided.")
         };
 
-        let asm = asm::generate_assembly();
+        let Some(ref ast) = self.ast else {
+            pipeline_error!("No AST provided")
+        };
+
+        let asm = asm::generate_assembly(ast);
         asm::assemble(asm.as_str(), &out_path)?;
 
         Ok(self)
