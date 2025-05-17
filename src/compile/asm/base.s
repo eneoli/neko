@@ -1,5 +1,4 @@
 .intel_syntax noprefix
-
 .global main
 .global _main
 
@@ -13,6 +12,4 @@ main:
 
 _main:
 # Start of generated assembly
-# TODO for now just return always 0
-mov rax, 0
-ret
+
