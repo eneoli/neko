@@ -11,6 +11,9 @@ pub enum SemanticError {
 
     #[error("Variable {0} is used without being declared.")]
     VariableUndeclared(String),
+    
+    #[error("Variable {0} is used without being initialized.")]
+    VariableUninitialized(String),
 
     #[error("Program does not return a value.")]
     MissingReturn,
@@ -19,9 +22,15 @@ pub enum SemanticError {
     IntLiteralOutOfBounds,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum VariableState {
+    Declared,
+    Initialized,
+}
+
 pub struct SemanticAnalysis {
     has_return: bool,
-    declared_variables: HashMap<String, Type>,
+    declared_variables: HashMap<String, VariableState>,
 }
 
 impl SemanticAnalysis {
@@ -41,20 +50,20 @@ impl SemanticAnalysis {
 
         for stmt in stmts.iter() {
             match stmt {
-                Stmt::Decl(ty, name, _) => {
+                Stmt::Decl(_, name, _) => {
                     if self.declared_variables.contains_key(name) {
                         return Err(SemanticError::VariableRedeclared(name.to_string()));
                     }
 
-                    self.declared_variables.insert(name.clone(), ty.clone());
+                    self.declared_variables.insert(name.clone(), VariableState::Declared);
                 }
-                Stmt::Init(ty, name, expr, _) => {
+                Stmt::Init(_, name, expr, _) => {
                     if self.declared_variables.contains_key(name) {
                         return Err(SemanticError::VariableRedeclared(name.to_string()));
                     }
 
                     self.analyze_expr(expr)?;
-                    self.declared_variables.insert(name.clone(), ty.clone());
+                    self.declared_variables.insert(name.clone(), VariableState::Initialized);
                 }
 
                 Stmt::Assign(name, _, expr, _) => {
@@ -63,6 +72,7 @@ impl SemanticAnalysis {
                     }
 
                     self.analyze_expr(expr)?;
+                    self.declared_variables.insert(name.clone(), VariableState::Initialized);
                 }
                 Stmt::Return(expr, _) => {
                     self.analyze_expr(expr)?;
@@ -85,6 +95,10 @@ impl SemanticAnalysis {
             Expr::Ident(name, _) => {
                 if !self.declared_variables.contains_key(name) {
                     return Err(SemanticError::VariableUndeclared(name.clone()));
+                }
+
+                if VariableState::Initialized != *self.declared_variables.get(name).unwrap() {
+                    return Err(SemanticError::VariableUninitialized(name.clone()));
                 }
 
                 Ok(())
