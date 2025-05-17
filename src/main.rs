@@ -25,5 +25,7 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     };
 
+    println!("{:#?}", err);
+
     err.into()
 }
