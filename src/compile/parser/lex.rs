@@ -1,6 +1,11 @@
 use std::borrow::Cow;
 
-use chumsky::prelude::*;
+use chumsky::{
+    combinator::Repeated, extra::ParserExtra, label::LabelError, prelude::*, text::TextExpected,
+    util::MaybeRef,
+};
+
+use crate::compile::ast::SourcePos;
 
 use super::Spanned;
 
@@ -50,7 +55,7 @@ pub enum Token<'src> {
 
 impl<'a> Token<'a> {
     pub fn into_owned<'b>(&'a self) -> Token<'b> {
-        match self.clone() {
+        match self {
             Token::IDENT(str) => Token::IDENT(Cow::Owned(str.clone().into_owned())),
             Token::NUM { value, base } => Token::NUM {
                 value: Cow::Owned(value.clone().into_owned()),
@@ -108,10 +113,21 @@ fn decimal<'src>() -> impl Parser<'src, &'src str, Token<'src>, ErrorParserExtra
 
 fn hexadecimal<'src>() -> impl Parser<'src, &'src str, Token<'src>, ErrorParserExtra<'src>> {
     just("0x")
-        .ignore_then(text::int(16))
-        .map(|value: &'src str| Token::NUM {
-            value: Cow::Borrowed(value),
-            base: 16,
+        .or(just("0X"))
+        .ignore_then(just("0").repeated().collect::<Vec<_>>().map(|x| x.len())) // leading zeros in hex okay
+        .then(text::int(16).or_not())
+        .try_map(|(zeros, value), span| {
+            if zeros == 0 && value.is_none() {
+                return Err(Rich::custom(span, "Expected hex code"));
+            }
+
+            Ok(Token::NUM {
+                base: 16,
+                value: match value {
+                    Some(value) => Cow::Borrowed(value),
+                    None => Cow::Borrowed("0"),
+                },
+            })
         })
 }
 
@@ -151,31 +167,33 @@ pub fn lexer<'src>()
     let assign_sub = just("-=").to(Token::ASSIGN_SUB);
     let assign_mult = just("*=").to(Token::ASSIGN_MULT);
     let assign_div = just("/=").to(Token::ASSIGN_DIV);
-    let assign_mod = just("%=").to(Token::ASSIGN_ADD);
+    let assign_mod = just("%=").to(Token::ASSIGN_MOD);
     let eq = just("=").to(Token::EQ);
     let plus = just("+").to(Token::PLUS);
     let minus = just("-").to(Token::MINUS);
-    let star = just("-").to(Token::STAR);
+    let star = just("*").to(Token::STAR);
     let slash = just("/").to(Token::SLASH);
-    let percent = just("%").to(Token::SLASH);
+    let percent = just("%").to(Token::PERCENT);
 
     let comment_single_line = just("//")
         .then(any().and_is(text::newline().not()).repeated())
-        .padded()
+        .padded_by(whitespace())
         .to(())
         .boxed();
 
     let comment_multi_line = recursive(|comment| {
+        let junk = comment.or(any().and_is(just("*/").not()).ignored());
+
         just("/*")
-            .then(comment.or(just("*/").not()))
-            .then(just("*/"))
-            .padded()
-            .to(())
+            .ignore_then(junk.repeated())
+            .ignore_then(just("*/"))
+            .padded_by(whitespace())
+            .ignored()
     });
 
     let comment = choice((comment_single_line, comment_multi_line)).boxed();
 
-    choice((
+    let token = choice((
         hexadecimal(),
         decimal(),
         ident,
@@ -195,11 +213,51 @@ pub fn lexer<'src>()
         star,
         slash,
         percent,
+    ));
+
+    #[derive(Debug, Clone, PartialEq)]
+    enum TokenKind<'a> {
+        Token(Token<'a>, SourcePos),
+        Comment,
+    }
+
+    choice((
+        comment.to(TokenKind::Comment),
+        token.map_with(|t, ctx| TokenKind::Token(t, ctx.span().into())),
     ))
-    .map_with(|token, ctx| (token, ctx.span().into()))
-    .padded_by(comment.repeated())
-    .padded()
+    .padded_by(whitespace())
     .repeated()
     .collect()
+    .map(|tokens: Vec<TokenKind<'_>>| {
+        tokens
+            .into_iter()
+            .filter(|t| !matches!(t, TokenKind::Comment))
+            .map(|t| match t {
+                TokenKind::Token(t, s) => (t, s),
+                TokenKind::Comment => unreachable!(),
+            })
+            .collect()
+    })
     .then_ignore(end())
+}
+
+pub fn whitespace<'src, E>()
+-> Repeated<impl Parser<'src, &'src str, (), E> + Copy, (), &'src str, E>
+where
+    E: ParserExtra<'src, &'src str>,
+    E::Error: LabelError<'src, &'src str, TextExpected<'src, &'src str>>,
+{
+    any()
+        .try_map(|c, span| {
+            if char::is_ascii_whitespace(&c) {
+                Ok(())
+            } else {
+                Err(LabelError::expected_found(
+                    [TextExpected::Whitespace],
+                    Some(MaybeRef::Val(c)),
+                    span,
+                ))
+            }
+        })
+        .repeated()
 }

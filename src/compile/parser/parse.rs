@@ -1,5 +1,10 @@
+use std::borrow::Cow;
+
 use chumsky::input::ValueInput;
+use chumsky::label::LabelError;
 use chumsky::prelude::*;
+use chumsky::text::TextExpected;
+use chumsky::util::MaybeRef;
 
 use crate::compile::ast::AST;
 use crate::compile::ast::AssignOp;
@@ -69,6 +74,15 @@ where
     choice((int,))
 }
 
+fn lvalue_parser<'src, I>() -> impl Parser<'src, I, Cow<'src, str>, ErrorParserExtra<'src>>
+where
+    I: ValueInput<'src, Token = Token<'src>, Span = SourcePos>,
+{
+    let ident = select! {Token::IDENT(x) => x};
+
+    recursive(|lvalue| ident.or(lvalue.delimited_by(just(Token::L_ROUND), just(Token::R_ROUND))))
+}
+
 pub fn decl_parser<'src, I>() -> impl Parser<'src, I, Stmt, ErrorParserExtra<'src>>
 where
     I: ValueInput<'src, Token = Token<'src>, Span = SourcePos>,
@@ -92,8 +106,6 @@ pub fn assign_parser<'src, I>() -> impl Parser<'src, I, Stmt, ErrorParserExtra<'
 where
     I: ValueInput<'src, Token = Token<'src>, Span = SourcePos>,
 {
-    let ident = select! {Token::IDENT(x) => x};
-
     let op = just(Token::EQ)
         .to(AssignOp::Eq)
         .or(just(Token::ASSIGN_ADD).to(AssignOp::Op(Op::Add)))
@@ -102,7 +114,7 @@ where
         .or(just(Token::ASSIGN_DIV).to(AssignOp::Op(Op::Div)))
         .or(just(Token::ASSIGN_MOD).to(AssignOp::Op(Op::Mod)));
 
-    ident
+    lvalue_parser()
         .then(op)
         .then(expr_parser())
         .then_ignore(just(Token::SEMICOLON))
@@ -142,12 +154,23 @@ where
                 .collect()
                 .delimited_by(just(Token::L_CURLY), just(Token::R_CURLY)),
         )
-        .map_with(|((ty, name), body), ctx| FunctionDecl {
-            ty,
-            name: name.to_string(),
-            args: Vec::new(),
-            body,
-            src_pos: ctx.span(),
+        .try_map_with(|((ty, name), body), ctx| {
+            let fun = FunctionDecl {
+                ty,
+                name: name.to_string(),
+                args: Vec::new(),
+                body,
+                src_pos: ctx.span(),
+            };
+
+            if "main" != fun.name {
+                return Err(Rich::custom(
+                    ctx.span(),
+                    "For now we support only a single \"main\" function",
+                ));
+            }
+
+            Ok(fun)
         })
 }
 
