@@ -1,16 +1,14 @@
 use std::borrow::Cow;
 
-use chumsky::input::ValueInput;
-use chumsky::label::LabelError;
 use chumsky::prelude::*;
-use chumsky::text::TextExpected;
-use chumsky::util::MaybeRef;
+use chumsky::input::ValueInput;
 
+use crate::compile::ast::UnaryOp;
 use crate::compile::ast::AST;
 use crate::compile::ast::AssignOp;
 use crate::compile::ast::Expr;
 use crate::compile::ast::FunctionDecl;
-use crate::compile::ast::Op;
+use crate::compile::ast::BinaryOp;
 use crate::compile::ast::SourcePos;
 use crate::compile::ast::Stmt;
 use crate::compile::ast::Type;
@@ -38,12 +36,12 @@ where
 
         let unary = just(Token::MINUS)
             .repeated()
-            .foldr(atomic_expr, |_, a| Expr::Unary(Op::Neg, Box::new(a)));
+            .foldr(atomic_expr, |_, a| Expr::Unary(UnaryOp::Neg, Box::new(a)));
 
         let mult_op = just(Token::STAR)
-            .to(Op::Mul)
-            .or(just(Token::SLASH).to(Op::Div))
-            .or(just(Token::PERCENT).to(Op::Mod));
+            .to(BinaryOp::Mul)
+            .or(just(Token::SLASH).to(BinaryOp::Div))
+            .or(just(Token::PERCENT).to(BinaryOp::Mod));
 
         let mult = unary
             .clone()
@@ -52,8 +50,8 @@ where
             });
 
         let sum_op = just(Token::PLUS)
-            .to(Op::Add)
-            .or(just(Token::MINUS).to(Op::Sub));
+            .to(BinaryOp::Add)
+            .or(just(Token::MINUS).to(BinaryOp::Sub));
 
         let sum = mult
             .clone()
@@ -108,11 +106,11 @@ where
 {
     let op = just(Token::EQ)
         .to(AssignOp::Eq)
-        .or(just(Token::ASSIGN_ADD).to(AssignOp::Op(Op::Add)))
-        .or(just(Token::ASSIGN_SUB).to(AssignOp::Op(Op::Sub)))
-        .or(just(Token::ASSIGN_MULT).to(AssignOp::Op(Op::Mul)))
-        .or(just(Token::ASSIGN_DIV).to(AssignOp::Op(Op::Div)))
-        .or(just(Token::ASSIGN_MOD).to(AssignOp::Op(Op::Mod)));
+        .or(just(Token::ASSIGN_ADD).to(AssignOp::Op(BinaryOp::Add)))
+        .or(just(Token::ASSIGN_SUB).to(AssignOp::Op(BinaryOp::Sub)))
+        .or(just(Token::ASSIGN_MULT).to(AssignOp::Op(BinaryOp::Mul)))
+        .or(just(Token::ASSIGN_DIV).to(AssignOp::Op(BinaryOp::Div)))
+        .or(just(Token::ASSIGN_MOD).to(AssignOp::Op(BinaryOp::Mod)));
 
     lvalue_parser()
         .then(op)

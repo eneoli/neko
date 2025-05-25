@@ -13,8 +13,8 @@ pub enum Type {
 pub enum Expr {
     Int(IntLiteral, SourcePos),
     Ident(String, SourcePos),
-    Unary(Op, Box<Expr>),
-    Binary(Op, Box<Expr>, Box<Expr>),
+    Unary(UnaryOp, Box<Expr>),
+    Binary(BinaryOp, Box<Expr>, Box<Expr>),
 }
 
 #[derive(Debug, Clone)]
@@ -26,19 +26,23 @@ pub enum Stmt {
 }
 
 #[derive(Debug, Clone)]
-pub enum Op {
+pub enum UnaryOp {
+    Neg,
+}
+
+#[derive(Debug, Clone)]
+pub enum BinaryOp {
     Mul,
     Add,
     Sub,
     Div,
-    Neg,
     Mod,
 }
 
 #[derive(Debug, Clone)]
 pub enum AssignOp {
     Eq,
-    Op(Op),
+    Op(BinaryOp),
 }
 
 type FunctionArgument = (Type, String);
