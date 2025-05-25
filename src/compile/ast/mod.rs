@@ -19,8 +19,7 @@ pub enum Expr {
 
 #[derive(Debug, Clone)]
 pub enum Stmt {
-    Decl(Type, String, SourcePos),
-    Init(Type, String, Expr, SourcePos),
+    Decl(Type, String, Option<Expr>, SourcePos),
     Assign(String, AssignOp, Expr, SourcePos),
     Return(Expr, SourcePos),
 }

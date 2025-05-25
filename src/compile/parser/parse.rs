@@ -1,17 +1,17 @@
 use std::borrow::Cow;
 
-use chumsky::prelude::*;
 use chumsky::input::ValueInput;
+use chumsky::prelude::*;
 
-use crate::compile::ast::UnaryOp;
 use crate::compile::ast::AST;
 use crate::compile::ast::AssignOp;
+use crate::compile::ast::BinaryOp;
 use crate::compile::ast::Expr;
 use crate::compile::ast::FunctionDecl;
-use crate::compile::ast::BinaryOp;
 use crate::compile::ast::SourcePos;
 use crate::compile::ast::Stmt;
 use crate::compile::ast::Type;
+use crate::compile::ast::UnaryOp;
 use crate::compile::ast::int_literal::IntLiteral;
 use crate::compile::parser::lex::Token;
 
@@ -92,11 +92,13 @@ where
         .then(just(Token::EQ).then(expr_parser()).or_not())
         .then_ignore(just(Token::SEMICOLON))
         .map_with(|((ty, name), expr), ctx| {
-            if let Some((_, expr)) = expr {
-                Stmt::Init(ty, name.to_string(), expr, ctx.span())
+            let expr = if let Some((_, expr)) = expr {
+                Some(expr)
             } else {
-                Stmt::Decl(ty, name.to_string(), ctx.span())
-            }
+                None
+            };
+
+            Stmt::Decl(ty, name.to_string(), expr, ctx.span())
         })
 }
 

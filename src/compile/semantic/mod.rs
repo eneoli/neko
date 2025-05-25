@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use thiserror::Error;
 
-use super::ast::{AST, Expr, Stmt, Type};
+use super::ast::{AST, Expr, Stmt};
 
 #[derive(Error, Debug)]
 pub enum SemanticError {
@@ -11,7 +11,7 @@ pub enum SemanticError {
 
     #[error("Variable {0} is used without being declared.")]
     VariableUndeclared(String),
-    
+
     #[error("Variable {0} is used without being initialized.")]
     VariableUninitialized(String),
 
@@ -50,20 +50,19 @@ impl SemanticAnalysis {
 
         for stmt in stmts.iter() {
             match stmt {
-                Stmt::Decl(_, name, _) => {
+                Stmt::Decl(_, name, expr, _) => {
                     if self.declared_variables.contains_key(name) {
                         return Err(SemanticError::VariableRedeclared(name.to_string()));
                     }
 
-                    self.declared_variables.insert(name.clone(), VariableState::Declared);
-                }
-                Stmt::Init(_, name, expr, _) => {
-                    if self.declared_variables.contains_key(name) {
-                        return Err(SemanticError::VariableRedeclared(name.to_string()));
+                    if let Some(expr) = expr {
+                        self.analyze_expr(expr)?;
+                        self.declared_variables
+                            .insert(name.clone(), VariableState::Initialized);
+                    } else {
+                        self.declared_variables
+                            .insert(name.clone(), VariableState::Declared);
                     }
-
-                    self.analyze_expr(expr)?;
-                    self.declared_variables.insert(name.clone(), VariableState::Initialized);
                 }
 
                 Stmt::Assign(name, _, expr, _) => {
@@ -72,7 +71,8 @@ impl SemanticAnalysis {
                     }
 
                     self.analyze_expr(expr)?;
-                    self.declared_variables.insert(name.clone(), VariableState::Initialized);
+                    self.declared_variables
+                        .insert(name.clone(), VariableState::Initialized);
                 }
                 Stmt::Return(expr, _) => {
                     self.analyze_expr(expr)?;
