@@ -22,13 +22,13 @@ impl IntLiteral {
             _ => unreachable!("Parser returned invalid number: {}", self.value),
         })?;
 
-        let MAX_INT = match self.base {
+        let max_int = match self.base {
             10 => MAX_INT_DEC,
             16 => MAX_INT_HEX,
             _ => panic!("Unknown base: {}", self.base),
         };
 
-        if num > MAX_INT {
+        if num > max_int {
             return Err(SemanticError::IntLiteralOutOfBounds);
         }
 

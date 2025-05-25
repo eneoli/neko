@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    fmt::{Display, write},
+    fmt::Display,
     fs::File,
     io::{self, Write},
     path::Path,
@@ -16,7 +16,7 @@ pub mod regalloc;
 use rand::distr::{Alphanumeric, SampleString};
 use regalloc::Allocator;
 
-use super::ast::{AST, AssignOp, Expr, Op, Stmt};
+use super::ast::{AST, AssignOp, BinaryOp, Expr, Stmt};
 
 type Assembly<'a> = &'a str;
 type Temp = usize;
@@ -312,11 +312,13 @@ impl AsmGen {
                 let temp = self.fresh_temp();
 
                 let asm = match op {
-                    Op::Add => vec![AsmIr::MOV(temp, temp1), AsmIr::ADD(temp.clone(), temp2)],
-                    Op::Sub => vec![AsmIr::MOV(temp, temp1), AsmIr::SUB(temp.clone(), temp2)],
-                    Op::Mul => vec![AsmIr::MOV(temp, temp1), AsmIr::MULT(temp.clone(), temp2)],
-                    Op::Div => vec![AsmIr::MOV(temp, temp1), AsmIr::DIV(temp, temp2)],
-                    Op::Mod => vec![AsmIr::MOV(temp, temp1), AsmIr::MOD(temp.clone(), temp2)],
+                    BinaryOp::Add => vec![AsmIr::MOV(temp, temp1), AsmIr::ADD(temp.clone(), temp2)],
+                    BinaryOp::Sub => vec![AsmIr::MOV(temp, temp1), AsmIr::SUB(temp.clone(), temp2)],
+                    BinaryOp::Mul => {
+                        vec![AsmIr::MOV(temp, temp1), AsmIr::MULT(temp.clone(), temp2)]
+                    }
+                    BinaryOp::Div => vec![AsmIr::MOV(temp, temp1), AsmIr::DIV(temp, temp2)],
+                    BinaryOp::Mod => vec![AsmIr::MOV(temp, temp1), AsmIr::MOD(temp.clone(), temp2)],
 
                     _ => panic!("Neg as binary op?"),
                 };
@@ -328,8 +330,8 @@ impl AsmGen {
 
     fn munch_stmt(&mut self, stmt: &Stmt) -> Vec<AsmIr> {
         match stmt {
-            Stmt::Decl(ty, name, _) => vec![],
-            Stmt::Init(ty, name, expr, _) => {
+            Stmt::Decl(ty, name, None, _) => vec![],
+            Stmt::Decl(ty, name, Some(expr), _) => {
                 let (temp, asm_expr) = self.munch_expr(expr);
 
                 let var_temp = self.get_reg(name);
