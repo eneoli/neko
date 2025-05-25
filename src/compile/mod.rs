@@ -12,6 +12,7 @@ use crate::infra::NekoError;
 
 pub mod asm;
 pub mod ast;
+pub mod ir;
 pub mod parser;
 pub mod semantic;
 
