@@ -10,13 +10,7 @@ use super::NodeId;
 
 pub struct ScopeNode {
     pub id: NodeId,
-
-    // A stack of scopes.
-    // Each scope is a map of variable names to integers, being indicies
-    // into the inputs of the ScopeNode
-    // To access the Node associated with a name, first the symbol table is consulted, and then
-    // the ScopeNode's inputs to find the required Node.
-    pub scopes: Vec<HashMap<String, usize>>,
+    pub scopes: Vec<HashMap<String, NodeId>>,
 }
 
 impl ScopeNode {
@@ -33,7 +27,7 @@ impl ScopeNode {
         }
     }
 
-    pub fn lookup(&self, name: &String, sea: &Sea) -> Option<NodeId> {
+    pub fn lookup(&self, name: &String) -> Option<NodeId> {
         let scope = self
             .scopes
             .iter()
@@ -42,7 +36,7 @@ impl ScopeNode {
 
         if let Some(scope) = scope {
             let idx = *scope.get(name).unwrap();
-            return Some(sea.inputs[self.id][idx]);
+            return Some(idx);
         }
 
         None
@@ -56,8 +50,8 @@ impl ScopeNode {
             return Err(());
         }
 
-        let (use_ref, _) = sea.add_edge(scope_id, value);
-        current_scope.insert(name, use_ref);
+        current_scope.insert(name, value);
+        sea.add_output_edge(scope_id, value);
 
         Ok(())
     }

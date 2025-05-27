@@ -1,16 +1,21 @@
 use crate::compile::ast::{AST, Expr, Stmt};
 
 use super::{
-    node::{NodeId, NodeKind},
+    node::{NodeId, node_kind::NodeKind},
+    optimize::Optimization,
     sea::Sea,
     types::Type,
 };
 
-struct SsaTranslation {}
+struct SsaTranslation {
+    optimization: Optimization,
+}
 
 impl SsaTranslation {
     pub fn new() -> Self {
-        SsaTranslation {}
+        SsaTranslation {
+            optimization: Optimization::new(),
+        }
     }
 
     pub fn translate(&mut self, ast: &AST) -> Sea {
@@ -22,7 +27,11 @@ impl SsaTranslation {
 
     fn traverse_ast(&mut self, ast: &AST, sea: &mut Sea) {
         match ast {
-            AST::Block(stmts, _) => {}
+            AST::Block(stmts, _) => {
+                for stmt in stmts.iter() {
+                    self.traverse_stmt(stmt, sea);
+                }
+            }
         }
     }
 
@@ -36,36 +45,46 @@ impl SsaTranslation {
                 let child = self.traverse_expr(expr, sea);
                 sea.define(name.clone(), child);
             }
-            Stmt::Assign(name, op, expr, _) => {
-                
-            }
+            Stmt::Assign(name, op, expr, _) => {}
             Stmt::Return(expr, _) => {
-                let child = self.traverse_expr(expr, sea);
-                let kind = NodeKind::Return;
+                let value = self.traverse_expr(expr, sea);
+                let kind = NodeKind::Return {
+                    ctrl: sea.start(), // TODO
+                    value,
+                };
 
-                sea.add_node(kind, vec![child]);
+                sea.add_node(kind);
             }
         }
     }
 
     fn traverse_expr(&mut self, expr: &Expr, sea: &mut Sea) -> NodeId {
         match expr {
-            Expr::Int(lit, _) => sea.add_def(NodeKind::Constant(Type::Int(lit.parse().unwrap()))),
+            Expr::Int(lit, _) => sea.add_node(NodeKind::Constant {
+                ctrl: sea.start(),
+                ty: Type::Int(lit.parse().unwrap() as i64) ,
+            }),
             Expr::Ident(name, _) => sea
                 .lookup(name)
                 .expect("Reference to unknown identifier, error in semantic analysis?"),
             Expr::Unary(op, expr) => {
-                let child = self.traverse_expr(expr, sea);
-                let kind = NodeKind::Unary(op.into());
+                let rhs = self.traverse_expr(expr, sea);
+                let kind = NodeKind::Unary { op: op.into(), rhs };
 
-                sea.add_node(kind, vec![child])
+                let node_id = sea.add_node(kind);
+                self.optimization.optimize(node_id, sea)
             }
             Expr::Binary(op, left_expr, right_expr) => {
-                let left_node = self.traverse_expr(left_expr, sea);
-                let right_node = self.traverse_expr(right_expr, sea);
-                let kind = NodeKind::Binary(op.into());
+                let lhs = self.traverse_expr(left_expr, sea);
+                let rhs = self.traverse_expr(right_expr, sea);
+                let kind = NodeKind::Binary {
+                    op: op.into(),
+                    lhs,
+                    rhs,
+                };
 
-                sea.add_node(kind, vec![left_node, right_node])
+                let node_id = sea.add_node(kind);
+                self.optimization.optimize(node_id, sea)
             }
         }
     }
