@@ -11,6 +11,7 @@ use std::{
 // and because the code looks like shit.
 // In the future this gets replaced by a proper IR, but I'm on a time crunch right now...
 
+pub mod x86;
 pub mod regalloc;
 
 use rand::distr::{Alphanumeric, SampleString};
