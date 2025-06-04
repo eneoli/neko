@@ -2,6 +2,7 @@ use crate::compile::ir::types::Type;
 
 use super::{NodeId, scope_node::ScopeNode};
 
+#[derive(Clone, Debug)]
 pub enum UnaryNodeOp {
     Neg,
 }
@@ -24,6 +25,7 @@ impl From<&crate::compile::ast::UnaryOp> for UnaryNodeOp {
     }
 }
 
+#[derive(Clone, Debug)]
 pub enum BinaryNodeOp {
     Add,
     Sub,
@@ -58,6 +60,7 @@ impl From<&crate::compile::ast::BinaryOp> for BinaryNodeOp {
     }
 }
 
+#[derive(Clone, Debug)]
 pub enum NodeKind {
     Start,
     Return {
@@ -89,10 +92,10 @@ impl NodeKind {
     pub fn inputs(&self) -> Vec<NodeId> {
         match self {
             NodeKind::Start => vec![],
-            NodeKind::Constant { ctrl, .. } => vec![*ctrl],
+            NodeKind::Constant { ctrl, ..} => vec![*ctrl],
             NodeKind::Return { ctrl, value } => vec![*ctrl, *value],
-            NodeKind::Unary { rhs, .. } => vec![*rhs],
-            NodeKind::Binary { lhs, rhs, .. } => vec![*rhs, *lhs],
+            NodeKind::Unary { rhs, ..} => vec![*rhs],
+            NodeKind::Binary { lhs, rhs, .. } => vec![*lhs, *rhs],
             NodeKind::Multi | NodeKind::Projection(_) | NodeKind::Scope(_) => vec![],
             NodeKind::Deleted => vec![],
         }
@@ -104,8 +107,9 @@ impl NodeKind {
             NodeKind::Constant { ctrl, .. } => vec![ctrl],
             NodeKind::Return { ctrl, value } => vec![ctrl, value],
             NodeKind::Unary { rhs, .. } => vec![rhs],
-            NodeKind::Binary { lhs, rhs, .. } => vec![rhs, lhs],
-            NodeKind::Multi | NodeKind::Projection(_) | NodeKind::Scope(_) => vec![],
+            NodeKind::Binary { lhs, rhs, .. } => vec![lhs, rhs],
+            NodeKind::Multi | NodeKind::Projection(_) => vec![],
+            NodeKind::Scope(scope) => scope.inputs_mut(),
             NodeKind::Deleted => vec![],
         }
     }
