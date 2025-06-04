@@ -8,6 +8,7 @@ use crate::compile::ir::sea::Sea;
 
 use super::NodeId;
 
+#[derive(Clone, Debug)]
 pub struct ScopeNode {
     pub id: NodeId,
     pub scopes: Vec<HashMap<String, NodeId>>,
@@ -25,6 +26,14 @@ impl ScopeNode {
                 HashMap::new(), // global scope
             ],
         }
+    }
+
+    pub fn push(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
+    pub fn pop(&mut self) {
+        self.scopes.pop();
     }
 
     pub fn lookup(&self, name: &String) -> Option<NodeId> {
@@ -58,10 +67,32 @@ impl ScopeNode {
 
     pub fn write(&mut self, name: String, value: NodeId) {
         let Some(scope) = self.defining_scope_mut(&name) else {
-            panic!("Tried to access undeclared variable \"{name}\", errror in semantical analysis?")
+            panic!("Tried to access undeclared variable \"{name}\", error in semantical analysis?")
         };
 
         scope.insert(name, value);
+    }
+
+    pub fn inputs(&self) -> Vec<NodeId> {
+        let mut inputs = vec![];
+        for scope in self.scopes.iter() {
+            let mut scope_inputs = scope.values().into_iter().cloned().collect::<Vec<usize>>();
+
+            inputs.append(&mut scope_inputs);
+        }
+
+        inputs
+    }
+
+    pub fn inputs_mut(&mut self) -> Vec<&mut NodeId> {
+        let mut inputs: Vec<&mut NodeId> = vec![];
+        for scope in self.scopes.iter_mut() {
+            let mut scope_inputs = scope.values_mut().into_iter().collect();
+
+            inputs.append(&mut scope_inputs);
+        }
+
+        inputs
     }
 
     ////////////////////////////////
