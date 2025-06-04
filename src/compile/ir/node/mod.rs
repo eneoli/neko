@@ -7,9 +7,11 @@ pub mod scope_node;
 pub type NodeId = usize;
 
 // A single node in the Sea of Nodes
+#[derive(Clone, Debug)]
 pub struct Node {
     pub id: NodeId,
     pub kind: NodeKind,
+    pub effects: Vec<NodeId>,
 }
 
 impl Node {
@@ -17,6 +19,7 @@ impl Node {
         Self {
             id,
             kind: NodeKind::Start,
+            effects: Vec::new(),
         }
     }
 
@@ -24,14 +27,23 @@ impl Node {
         Self {
             id,
             kind: NodeKind::Scope(ScopeNode::new(id)),
+            effects: Vec::new(),
         }
     }
 
     pub fn inputs(&self) -> Vec<NodeId> {
-        self.kind.inputs()
+        vec![self.effects.clone(), self.kind.inputs()].concat()
     }
 
     pub fn reroute(&mut self, old_node_id: NodeId, new_node_id: NodeId) {
-        self.kind.reroute(old_node_id, new_node_id)
+        if self.effects.contains(&old_node_id) {
+            self.effects.retain(|v| *v != old_node_id);
+        }
+
+        if !self.effects.contains(&new_node_id) {
+            self.effects.push(new_node_id);
+        }
+
+        self.kind.reroute(old_node_id, new_node_id);
     }
 }
