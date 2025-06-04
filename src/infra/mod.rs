@@ -57,4 +57,7 @@ pub enum NekoError {
 
     #[error("There was an I/O error: {0}")]
     IOError(#[from] std::io::Error),
+
+    #[error("There was an Formatting error: {0}")]
+    FmtError(#[from] std::fmt::Error)
 }
