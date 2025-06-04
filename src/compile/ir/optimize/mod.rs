@@ -41,6 +41,10 @@ impl Optimization {
             sea.node_mut(*user).reroute(old_node_id, new_node_id);
         }
 
+        // add effects
+        sea.nodes[new_node_id].effects = sea.nodes[old_node_id].effects.clone(); // TODO ok to just override and not merge?
+        sea.nodes[old_node_id].effects = vec![];
+
         sea.delete_node(old_node_id);
     }
 }

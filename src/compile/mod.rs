@@ -5,6 +5,7 @@ use std::{
 
 use ast::AST;
 use chumsky::{Parser, input::Input};
+use ir::sea::Sea;
 use parser::{lex::lexer, parse::program_parser};
 use semantic::SemanticAnalysis;
 
@@ -29,6 +30,7 @@ pub struct Compiler {
     src_path: Option<PathBuf>,
     out_path: Option<PathBuf>,
     ast: Option<AST>,
+    sea: Option<Sea>,
 }
 
 impl Compiler {
@@ -49,7 +51,9 @@ impl Compiler {
     }
 
     pub fn compile(&mut self) -> Result<&mut Self, NekoError> {
-        self.parse()?.analyze()?.assemble()
+        self.parse()?.analyze()?.transform()?.assemble()?;
+
+        Ok(self)
     }
 
     fn parse(&mut self) -> Result<&mut Self, NekoError> {
@@ -64,11 +68,12 @@ impl Compiler {
 
         let tokens = lexer().parse(src.as_str()).into_result().map_err(
             |err: Vec<chumsky::prelude::Rich<'_, char>>| {
-                let lulz: Vec<chumsky::prelude::Rich<'static, char>> = err
+                let err: Vec<chumsky::prelude::Rich<'static, char>> = err
                     .into_iter()
                     .map(chumsky::error::Rich::into_owned)
                     .collect();
-                NekoError::LexerError(lulz)
+
+                NekoError::LexerError(err)
             },
         )?;
 
@@ -101,17 +106,27 @@ impl Compiler {
         Ok(self)
     }
 
+    fn transform(&mut self) -> Result<&mut Self, NekoError> {
+        let Some(ref ast) = self.ast else {
+            pipeline_error!("No AST provided.")
+        };
+
+        let sea = Sea::from_ast(ast);
+        self.sea = Some(sea);
+
+        Ok(self)
+    }
+
     fn assemble(&mut self) -> Result<&mut Self, NekoError> {
         let Some(ref out_path) = self.out_path else {
             pipeline_error!("No output path provided.")
         };
 
-        let Some(ref ast) = self.ast else {
-            pipeline_error!("No AST provided")
+        let Some(ref sea) = self.sea else {
+            pipeline_error!("No IR generated")
         };
 
-        let asm = asm::generate_assembly(ast);
-        asm::assemble(asm.as_str(), &out_path)?;
+        asm::x86::assemble(sea, out_path)?;
 
         Ok(self)
     }

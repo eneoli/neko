@@ -6,6 +6,7 @@ use super::{
 };
 
 // This represents a Sea of Nodes Graph
+#[derive(Clone, Debug)]
 pub struct Sea {
     // Indexed by NodeId
     pub nodes: Vec<Node>,
@@ -15,6 +16,7 @@ pub struct Sea {
     pub outputs: Vec<Vec<NodeId>>,
 
     start: NodeId,
+    end: Option<NodeId>, // Return Node for now
     scope: NodeId,
 }
 
@@ -27,6 +29,7 @@ impl Sea {
             nodes: vec![start, scope],
             outputs: vec![vec![], vec![]],
             start: 0,
+            end: None,
             scope: 1,
         }
     }
@@ -51,11 +54,19 @@ impl Sea {
         self.start
     }
 
-    pub fn add_node(&mut self, kind: NodeKind) -> NodeId {
+    pub fn end(&self) -> Option<NodeId> {
+        self.end
+    }
+
+    pub fn scope(&self) -> NodeId {
+        self.scope
+    }
+
+    pub fn add_node(&mut self, kind: NodeKind, effects: Vec<NodeId>) -> NodeId {
         let id = self.next_id();
         let inputs = kind.inputs();
 
-        self.nodes.push(Node { id, kind });
+        self.nodes.push(Node { id, kind, effects });
         self.outputs.push(Vec::new());
 
         // add output edges
@@ -63,6 +74,20 @@ impl Sea {
             if !self.outputs[*input].contains(&id) {
                 self.outputs[*input].push(id);
             }
+        }
+
+        for effect in self.nodes[id].effects.iter() {
+            if !self.outputs[*effect].contains(&id) {
+                self.outputs[*effect].push(id);
+            }
+        }
+
+        // check if return node
+        if let NodeKind::Return { .. } = self.nodes[id].kind {
+            if self.end.is_some() {
+                panic!("Second return?");
+            }
+            self.end = Some(id);
         }
 
         id
@@ -84,10 +109,10 @@ impl Sea {
         for input in node.inputs() {
             self.outputs[input].retain(|x| *x != node.id);
 
-            // remove node if no outputs
-            if self.outputs[input].len() == 0 {
-                delete_inputs.push(input);
-            }
+            // remove node if no users
+            // if self.outputs[input].len() == 0 {
+            //     delete_inputs.push(input);
+            // }
         }
 
         node.kind = NodeKind::Deleted;
