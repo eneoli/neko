@@ -59,6 +59,32 @@ pub fn export(sea: &Sea) -> String {
         }
     }
 
+    // Scope Node
+    writeln!(&mut dot, "subgraph scope_node {{").unwrap();
+    writeln!(&mut dot, "cluster=true;").unwrap();
+    writeln!(&mut dot, "label = \"ScopeNode\";").unwrap();
+
+    let NodeKind::Scope(ref scope_node) = sea.node(sea.scope()).kind else {
+        unreachable!();
+    };
+
+    for (i, scope) in scope_node.scopes.iter().enumerate() {
+        writeln!(&mut dot, "subgraph scope_{i} {{").unwrap();
+        writeln!(&mut dot, "cluster=true;").unwrap();
+        writeln!(&mut dot, "label = \"Scope Level {i}\";").unwrap();
+
+        for name in scope.keys() {
+            let value = scope.get(name).unwrap();
+            writeln!(&mut dot, "{name} [label=\"{name}\"];").unwrap();
+            writeln!(&mut dot, "{name} -> {value}").unwrap();
+        }
+
+        writeln!(&mut dot, "}}").unwrap();
+
+    }
+
+    writeln!(&mut dot, "}}").unwrap();
+
     dot.push_str("\n}");
 
     dot
