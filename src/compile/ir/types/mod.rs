@@ -1,7 +1,8 @@
+#[derive(Clone, Debug)]
 pub enum Type {
     Top,
     Bot,
-    Int(i64),
+    Int(u32),
 }
 
 impl Type {
