@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use thiserror::Error;
 
+use crate::compile::ast::AssignOp;
+
 use super::ast::{AST, Expr, Stmt};
 
 #[derive(Error, Debug)]
@@ -65,9 +67,16 @@ impl SemanticAnalysis {
                     }
                 }
 
-                Stmt::Assign(name, _, expr, _) => {
+                Stmt::Assign(name, op, expr, _) => {
                     if !self.declared_variables.contains_key(name) {
                         return Err(SemanticError::VariableUndeclared(name.to_string()));
+                    }
+
+                    if let AssignOp::Op(_) = op {
+                        if let VariableState::Declared = self.declared_variables.get(name).unwrap()
+                        {
+                            return Err(SemanticError::VariableUninitialized(name.to_string()));
+                        }
                     }
 
                     self.analyze_expr(expr)?;
