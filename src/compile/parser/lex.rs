@@ -164,11 +164,17 @@ pub fn lexer<'src>()
         assign_shift_right,
     ));
 
-    let comparison_token = choice((
+    let logical_token = choice((
         logical_and,
         logical_or,
+    ));
+
+    let shift_token = choice((
         shift_left,
         shift_right,
+    ));
+
+    let comparison_token = choice((
         eq,
         not_eq,
         less_eq,
@@ -199,6 +205,8 @@ pub fn lexer<'src>()
     let token = choice((
         value_token,
         assign_token,
+        logical_token,
+        shift_token,
         comparison_token,
         single_symbol_token,
     ))
