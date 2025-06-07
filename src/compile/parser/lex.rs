@@ -42,6 +42,7 @@ pub enum Token<'src> {
     R_CURLY,
     L_POINTY,
     R_POINTY,
+    COLON,
     SEMICOLON,
     EQUAL_SIGN,
     PLUS,
@@ -50,6 +51,7 @@ pub enum Token<'src> {
     SLASH,
     PERCENT,
     EXCLAMATION_MARK,
+    QUESTION_MARK,
     TILDE,
     LESS_EQ,
     GREATER_EQ,
@@ -116,10 +118,12 @@ pub fn lexer<'src>()
     let lpointy = just("<").to(Token::L_POINTY);
     let rpointy = just(">").to(Token::R_POINTY);
     let exclamation_mark = just("!").to(Token::EXCLAMATION_MARK);
+    let question_mark = just("?").to(Token::EXCLAMATION_MARK);
     let tilde = just("~").to(Token::TILDE);
     let ampersand = just("&").to(Token::AMPERSAND);
     let pipe = just("|").to(Token::PIPE);
     let caret = just("^").to(Token::PIPE);
+    let colon = just(":").to(Token::SEMICOLON);
     let semicolon = just(";").to(Token::SEMICOLON);
     //
     let assign_add = just("+=").to(Token::ASSIGN_ADD);
@@ -190,10 +194,12 @@ pub fn lexer<'src>()
         lpointy,
         rpointy,
         exclamation_mark,
+        question_mark,
         tilde,
         ampersand,
         pipe,
         caret,
+        colon,
         semicolon,
         plus,
         minus,
