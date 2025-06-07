@@ -285,7 +285,7 @@ where
 {
     any()
         .try_map(|c, span| {
-            if char::is_ascii_whitespace(&c) {
+            if matches!(c, '\t' | '\n' | '\r' | ' ') {
                 Ok(())
             } else {
                 Err(LabelError::expected_found(
