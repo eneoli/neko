@@ -118,12 +118,12 @@ pub fn lexer<'src>()
     let lpointy = just("<").to(Token::L_POINTY);
     let rpointy = just(">").to(Token::R_POINTY);
     let exclamation_mark = just("!").to(Token::EXCLAMATION_MARK);
-    let question_mark = just("?").to(Token::EXCLAMATION_MARK);
+    let question_mark = just("?").to(Token::QUESTION_MARK);
     let tilde = just("~").to(Token::TILDE);
     let ampersand = just("&").to(Token::AMPERSAND);
     let pipe = just("|").to(Token::PIPE);
-    let caret = just("^").to(Token::PIPE);
-    let colon = just(":").to(Token::SEMICOLON);
+    let caret = just("^").to(Token::CARET);
+    let colon = just(":").to(Token::COLON);
     let semicolon = just(";").to(Token::SEMICOLON);
     //
     let assign_add = just("+=").to(Token::ASSIGN_ADD);
@@ -133,9 +133,9 @@ pub fn lexer<'src>()
     let assign_mod = just("%=").to(Token::ASSIGN_MOD);
     let assign_bit_and = just("&=").to(Token::ASSIGN_BIT_AND);
     let assign_bit_or = just("|=").to(Token::ASSIGN_BIT_OR);
-    let assign_bit_xor = just("|=").to(Token::ASSIGN_BIT_XOR);
+    let assign_bit_xor = just("^=").to(Token::ASSIGN_BIT_XOR);
     let assign_shift_left = just("<<=").to(Token::ASSIGN_SHIFT_LEFT);
-    let assign_shift_right = just(">>=").to(Token::ASSIGN_SHIFT_LEFT);
+    let assign_shift_right = just(">>=").to(Token::ASSIGN_SHIFT_RIGHT);
     //
     let logical_and = just("&&").to(Token::LOGICAL_AND);
     let logical_or = just("||").to(Token::LOGICAL_OR);

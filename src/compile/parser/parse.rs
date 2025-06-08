@@ -34,7 +34,12 @@ where
         .then(ident)
         .then_ignore(just(Token::L_ROUND))
         .then_ignore(just(Token::R_ROUND))
-        .then(stmt().delimited_by(just(Token::L_CURLY), just(Token::R_CURLY)))
+        .then(
+            stmt()
+                .repeated()
+                .collect()
+                .delimited_by(just(Token::L_CURLY), just(Token::R_CURLY)),
+        )
         .try_map_with(|((ty, name), body), ctx| {
             let fun = FunctionDecl {
                 ty,
@@ -48,6 +53,13 @@ where
                 return Err(Rich::custom(
                     ctx.span(),
                     "For now we support only a single \"main\" function",
+                ));
+            }
+
+            if Type::INT != fun.ty {
+                return Err(Rich::custom(
+                    ctx.span(),
+                    "\"main\" function needs to have return type \"int\"",
                 ));
             }
 
@@ -73,23 +85,31 @@ where
         let simp_stmt = choice((decl(), assign())).boxed();
 
         let if_stmt = just(Token::IF)
-            .ignore_then(expr().delimited_by(just(Token::L_CURLY), just(Token::R_CURLY)))
+            .ignore_then(expr().delimited_by(just(Token::L_ROUND), just(Token::R_ROUND)))
             .then(stmt.clone())
             .then(just(Token::ELSE).ignore_then(stmt.clone()).or_not())
-            .map(|((expr, if_stmt), else_stmt)| Stmt::If(expr, Box::new(if_stmt), else_stmt))
+            .map(|((expr, if_stmt), else_stmt)| {
+                Stmt::If(expr, Box::new(if_stmt), else_stmt.map(Box::new))
+            })
             .boxed();
 
         let while_stmt = just(Token::WHILE)
-            .ignore_then(expr().delimited_by(just(Token::L_CURLY), just(Token::R_CURLY)))
+            .ignore_then(expr().delimited_by(just(Token::L_ROUND), just(Token::R_ROUND)))
             .then(stmt.clone())
             .map(|(expr, stmt)| Stmt::While(expr, Box::new(stmt)))
             .boxed();
 
         let for_stmt = just(Token::FOR)
-            .ignore_then(simp_stmt.clone())
+            .ignore_then(just(Token::L_ROUND))
+            .ignore_then(simp_stmt.clone().or_not())
+            .then_ignore(just(Token::SEMICOLON))
             .then(expr())
-            .then(stmt.clone())
-            .map(|((init, condition), body)| Stmt::For(Box::new(init), condition, Box::new(body)))
+            .then_ignore(just(Token::SEMICOLON))
+            .then(simp_stmt.clone().or_not())
+            .then_ignore(just(Token::R_ROUND))
+            .map(|((init, condition), body)| {
+                Stmt::For(init.map(Box::new), condition, body.map(Box::new))
+            })
             .boxed();
 
         let break_stmt = just(Token::BREAK)
@@ -121,7 +141,7 @@ where
         .boxed();
 
         choice((
-            simp_stmt,
+            simp_stmt.then_ignore(just(Token::SEMICOLON)),
             if_stmt,
             while_stmt,
             for_stmt,
@@ -143,7 +163,6 @@ where
     type_parser()
         .then(ident)
         .then(just(Token::EQUAL_SIGN).then(expr()).or_not())
-        .then_ignore(just(Token::SEMICOLON))
         .map_with(|((ty, name), expr), ctx| {
             let expr = if let Some((_, expr)) = expr {
                 Some(expr)
@@ -176,7 +195,6 @@ where
     lvalue()
         .then(op)
         .then(expr())
-        .then_ignore(just(Token::SEMICOLON))
         .map_with(|((name, op), expr), ctx| Stmt::Assign(name.to_string(), op, expr, ctx.span()))
 }
 
@@ -189,7 +207,7 @@ where
     recursive(|lvalue| ident.or(lvalue.delimited_by(just(Token::L_ROUND), just(Token::R_ROUND))))
 }
 
-pub fn expr<'src, I>() -> impl Parser<'src, I, Expr, ErrorParserExtra<'src>>
+fn expr<'src, I>() -> impl Parser<'src, I, Expr, ErrorParserExtra<'src>>
 where
     I: ValueInput<'src, Token = Token<'src>, Span = SourcePos>,
 {
@@ -218,7 +236,7 @@ where
 
         let unary_op = choice((
             just(Token::MINUS).to(UnaryOp::Neg),
-            just(Token::EXCLAMATION_MARK).to(UnaryOp::LogicNot),
+            just(Token::EXCLAMATION_MARK).to(UnaryOp::LogicalNot),
             just(Token::TILDE).to(UnaryOp::BitwiseNot),
         ))
         .boxed();
