@@ -1,10 +1,12 @@
+pub mod elaboration;
+
 use std::collections::HashMap;
 
 use thiserror::Error;
 
-use crate::compile::ast::AssignOp;
+use crate::compile::ast::{AssignOp, FunctionDecl};
 
-use super::ast::{AST, Expr, Stmt};
+use super::ast::{Ast, Expr, Stmt};
 
 #[derive(Error, Debug)]
 pub enum SemanticError {
@@ -43,14 +45,14 @@ impl SemanticAnalysis {
         }
     }
 
-    pub fn analyze(ast: &AST) -> Result<(), SemanticError> {
+    pub fn analyze(ast: &Ast) -> Result<(), SemanticError> {
         Self::new()._analyze(ast)
     }
 
-    pub fn _analyze(&mut self, ast: &AST) -> Result<(), SemanticError> {
-        let AST::Block(stmts, _) = ast;
+    pub fn _analyze(&mut self, ast: &Ast) -> Result<(), SemanticError> {
+        let Ast::FunctionDecl(FunctionDecl { body, .. }) = ast;
 
-        for stmt in stmts.iter() {
+        for stmt in body.iter() {
             match stmt {
                 Stmt::Decl(_, name, expr, _) => {
                     if self.declared_variables.contains_key(name) {
@@ -87,6 +89,7 @@ impl SemanticAnalysis {
                     self.analyze_expr(expr)?;
                     self.has_return = true;
                 }
+                _ => todo!(),
             }
         }
 
@@ -117,7 +120,8 @@ impl SemanticAnalysis {
             Expr::Binary(_, expr1, expr2) => {
                 self.analyze_expr(expr1)?;
                 self.analyze_expr(expr2)
-            }
+            },
+            _ => todo!(),
         }
     }
 }

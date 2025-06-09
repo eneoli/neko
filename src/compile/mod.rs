@@ -3,13 +3,13 @@ use std::{
     path::PathBuf,
 };
 
-use ast::AST;
+use ast::Ast;
 use chumsky::{Parser, input::Input};
 use ir::sea::Sea;
 use parser::{lex::lexer, parse::program_parser};
 use semantic::SemanticAnalysis;
 
-use crate::infra::NekoError;
+use crate::{compile::{ir::sea::export, semantic::elaboration}, infra::NekoError};
 
 pub mod asm;
 pub mod ast;
@@ -29,7 +29,7 @@ macro_rules! pipeline_error {
 pub struct Compiler {
     src_path: Option<PathBuf>,
     out_path: Option<PathBuf>,
-    ast: Option<AST>,
+    ast: Option<Ast>,
     sea: Option<Sea>,
 }
 
@@ -111,7 +111,10 @@ impl Compiler {
             pipeline_error!("No AST provided.")
         };
 
-        let sea = Sea::from_ast(ast);
+        let core= elaboration::elab(ast);
+        let sea = todo!();
+
+        println!("{}", export::graphiz_dot::export(&sea));
         self.sea = Some(sea);
 
         Ok(self)
