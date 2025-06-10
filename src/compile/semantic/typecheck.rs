@@ -1,16 +1,22 @@
-use std::{collections::HashMap, slice::Iter};
+use std::slice::Iter;
 
 use thiserror::Error;
 
-use crate::compile::{
-    ast::SourcePos,
-    ir::core::{CoreBinaryOp, CoreExpr, CoreStmt, CoreType, CoreUnaryOp},
+use crate::{
+    compile::{
+        ast::SourcePos,
+        ir::core::{CoreBinaryOp, CoreExpr, CoreStmt, CoreType, CoreUnaryOp},
+    },
+    datstructures::scope_stack::ScopeStack,
 };
 
 #[derive(Error, Debug)]
 pub enum TypeCheckError<'a> {
     #[error("Cannot find variable {0} in the current scope")]
     VariableUndeclared(&'a str),
+
+    #[error("Variable {name} got redeclared")]
+    VariableRedeclared { name: &'a str, span: SourcePos },
 
     #[error("Variable {name} has unexpected type. Expected was `{expected}`, but got `{got}`")]
     UnexpectedVariableType {
@@ -28,17 +34,72 @@ pub enum TypeCheckError<'a> {
     },
 }
 
-// TODO variable declared but not initialized
-// ~> Add second context
-
 #[derive(Debug, Clone)]
 pub struct TypeChecker {
-    ctx: HashMap<String, CoreType>,
+    decls: ScopeStack<String, CoreType>,
+    initialized: ScopeStack<String, CoreType>,
 }
 
 impl TypeChecker {
-    pub fn validate(&mut self, stmt: &CoreStmt) -> Result<(), TypeCheckError> {
-        todo!()
+    pub fn new() -> Self {
+        Self {
+            decls: ScopeStack::new(1),
+            initialized: ScopeStack::new(1),
+        }
+    }
+
+    pub fn validate<'a>(
+        &mut self,
+        expected: CoreType,
+        stmt: &'a CoreStmt,
+    ) -> Result<(), TypeCheckError<'a>> {
+        match stmt {
+            CoreStmt::Break(_) | CoreStmt::Continue(_) => {}
+            CoreStmt::Return(expr, _) => self.check(expected, expr)?,
+            CoreStmt::Decl(ty, name, span) => {
+                if self.decls.lookup(name).is_some() {
+                    return Err(TypeCheckError::VariableRedeclared {
+                        name,
+                        span: span.clone(),
+                    });
+                }
+
+                self.decls.insert(name.clone(), *ty);
+            }
+            CoreStmt::Assign(name, expr, _) => {
+                let Some(ty) = self.decls.lookup(name).copied() else {
+                    return Err(TypeCheckError::VariableUndeclared(name.as_str()));
+                };
+
+                self.check(ty, expr)?;
+                self.initialized.insert(name.clone(), ty);
+            }
+            CoreStmt::Block(stmts) => {
+                self.decls.push();
+                self.initialized.push();
+
+                for stmt in stmts.iter() {
+                    self.validate(expected, stmt)?;
+                }
+
+                self.decls.pop();
+                self.initialized.pop();
+            }
+            CoreStmt::If(cond, then, otherwise) => {
+                self.check(CoreType::Bool, cond)?;
+                self.validate(expected, then)?;
+
+                if let Some(otherwise) = otherwise {
+                    self.validate(expected, otherwise)?;
+                }
+            }
+            CoreStmt::While(expr, stmt) => {
+                self.check(CoreType::Bool, expr)?;
+                self.validate(expected, stmt);
+            }
+        };
+
+        Ok(())
     }
 
     pub fn check<'a>(
@@ -50,11 +111,11 @@ impl TypeChecker {
             CoreExpr::Int(_, _) => CoreType::Int,
             CoreExpr::Bool(_, _) => CoreType::Bool,
             CoreExpr::Ident(name, _) => {
-                if !self.ctx.contains_key(name) {
+                if self.initialized.lookup(name).is_none() {
                     return Err(TypeCheckError::VariableUndeclared(name));
                 }
 
-                *self.ctx.get(name).unwrap()
+                *self.initialized.lookup(name).unwrap()
             }
             CoreExpr::Unary(op, rhs) => {
                 let constraint = op.expected_types(expected);
