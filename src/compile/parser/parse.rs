@@ -56,7 +56,7 @@ where
                 ));
             }
 
-            if Type::INT != fun.ty {
+            if Type::Int != fun.ty {
                 return Err(Rich::custom(
                     ctx.span(),
                     "\"main\" function needs to have return type \"int\"",
@@ -71,8 +71,8 @@ fn type_parser<'src, I>() -> impl Parser<'src, I, Type, ErrorParserExtra<'src>>
 where
     I: ValueInput<'src, Token = Token<'src>, Span = SourcePos>,
 {
-    let int = just(Token::INT).to(Type::INT);
-    let bool = just(Token::BOOL).to(Type::BOOL);
+    let int = just(Token::INT).to(Type::Int);
+    let bool = just(Token::BOOL).to(Type::Bool);
 
     choice((int, bool))
 }
