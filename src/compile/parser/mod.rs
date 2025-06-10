@@ -1,3 +1,4 @@
+pub mod elaboration;
 pub mod lex;
 pub mod parse;
 

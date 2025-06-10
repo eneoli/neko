@@ -1,30 +1,35 @@
 use std::borrow::Cow;
+use std::marker::PhantomData;
 
 use chumsky::input::ValueInput;
 use chumsky::prelude::*;
 
-use crate::compile::ast::AssignOp;
 use crate::compile::ast::Ast;
-use crate::compile::ast::BinaryOp;
-use crate::compile::ast::Expr;
 use crate::compile::ast::FunctionDecl;
+use crate::compile::ast::Parsed;
 use crate::compile::ast::SourcePos;
-use crate::compile::ast::Stmt;
 use crate::compile::ast::Type;
-use crate::compile::ast::UnaryOp;
 use crate::compile::ast::int_literal::IntLiteral;
+use crate::compile::ast::parsed::AssignOp;
+use crate::compile::ast::parsed::BinaryOp;
+use crate::compile::ast::parsed::Expr;
+use crate::compile::ast::parsed::Stmt;
+use crate::compile::ast::parsed::UnaryOp;
 use crate::compile::parser::lex::Token;
 
 type ErrorParserExtra<'src> = extra::Err<Rich<'src, Token<'src>, SourcePos>>;
 
-pub fn program_parser<'src, I>() -> impl Parser<'src, I, Ast, ErrorParserExtra<'src>>
+pub fn program_parser<'src, I>() -> impl Parser<'src, I, Ast<Parsed>, ErrorParserExtra<'src>>
 where
     I: ValueInput<'src, Token = Token<'src>, Span = SourcePos>,
 {
-    function_parser().map(|fun| Ast::FunctionDecl(fun))
+    function_parser().map(|fun| Ast {
+        main: fun,
+        _marker: PhantomData,
+    })
 }
 
-fn function_parser<'src, I>() -> impl Parser<'src, I, FunctionDecl, ErrorParserExtra<'src>>
+fn function_parser<'src, I>() -> impl Parser<'src, I, FunctionDecl<Stmt>, ErrorParserExtra<'src>>
 where
     I: ValueInput<'src, Token = Token<'src>, Span = SourcePos>,
 {
