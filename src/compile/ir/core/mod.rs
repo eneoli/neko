@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::compile::ast::SourcePos;
 
 #[derive(Debug, Clone)]
@@ -6,7 +8,7 @@ pub enum Core {
         ty: CoreType,
         body: Vec<CoreStmt>,
         span: SourcePos,
-    }
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -27,10 +29,19 @@ impl CoreStmt {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum CoreType {
     Int,
     Bool,
+}
+
+impl Display for CoreType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Int => write!(f, "int"),
+            Self::Bool => write!(f, "bool"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -46,6 +57,21 @@ pub enum CoreExpr {
 impl CoreExpr {
     pub fn boxed(self) -> Box<Self> {
         Box::new(self)
+    }
+
+    pub fn span(&self) -> SourcePos {
+        match self {
+            Self::Int(_, span) | Self::Bool(_, span) | Self::Ident(_, span) => span.clone(),
+            Self::Unary(_, expr) => {
+                let SourcePos { start, end } = expr.span();
+                (start - 1)..end
+            }
+            Self::Ternary(lhs, _, rhs) | Self::Binary(_, lhs, rhs) => {
+                let SourcePos { start, .. } = lhs.span();
+                let SourcePos { end, .. } = rhs.span();
+                start..end
+            }
+        }
     }
 }
 
