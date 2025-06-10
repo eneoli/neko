@@ -3,9 +3,9 @@ use std::slice::Iter;
 use thiserror::Error;
 
 use crate::{
-    compile::{
-        ast::SourcePos,
-        ir::core::{CoreBinaryOp, CoreExpr, CoreStmt, CoreType, CoreUnaryOp},
+    compile::ast::{
+        SourcePos, Type,
+        desugared::{BinaryOp, Expr, Stmt, UnaryOp},
     },
     datstructures::scope_stack::ScopeStack,
 };
@@ -22,22 +22,25 @@ pub enum TypeCheckError<'a> {
     UnexpectedVariableType {
         name: &'a str,
         span: SourcePos,
-        expected: CoreType,
-        got: CoreType,
+        expected: Type,
+        got: Type,
     },
 
     #[error("Expression has unexpected type. Expected was `{expected}`, but got `{got}`")]
     MismatchedTypes {
         span: SourcePos,
-        expected: CoreType,
-        got: CoreType,
+        expected: Type,
+        got: Type,
     },
+
+    #[error("Expected either a declaration or an assignment at.")]
+    ExpectedDeclAssign { got: &'a Stmt },
 }
 
 #[derive(Debug, Clone)]
 pub struct TypeChecker {
-    decls: ScopeStack<String, CoreType>,
-    initialized: ScopeStack<String, CoreType>,
+    decls: ScopeStack<String, Type>,
+    initialized: ScopeStack<String, Type>,
 }
 
 impl TypeChecker {
@@ -50,13 +53,13 @@ impl TypeChecker {
 
     pub fn validate<'a>(
         &mut self,
-        expected: CoreType,
-        stmt: &'a CoreStmt,
+        expected: Type,
+        stmt: &'a Stmt,
     ) -> Result<(), TypeCheckError<'a>> {
         match stmt {
-            CoreStmt::Break(_) | CoreStmt::Continue(_) => {}
-            CoreStmt::Return(expr, _) => self.check(expected, expr)?,
-            CoreStmt::Decl(ty, name, span) => {
+            Stmt::Break(_) | Stmt::Continue(_) => {}
+            Stmt::Return(expr, _) => self.check(expected, expr)?,
+            Stmt::Decl(ty, name, span) => {
                 if self.decls.lookup(name).is_some() {
                     return Err(TypeCheckError::VariableRedeclared {
                         name,
@@ -66,7 +69,7 @@ impl TypeChecker {
 
                 self.decls.insert(name.clone(), *ty);
             }
-            CoreStmt::Assign(name, expr, _) => {
+            Stmt::Assign(name, expr, _) => {
                 let Some(ty) = self.decls.lookup(name).copied() else {
                     return Err(TypeCheckError::VariableUndeclared(name.as_str()));
                 };
@@ -74,7 +77,7 @@ impl TypeChecker {
                 self.check(ty, expr)?;
                 self.initialized.insert(name.clone(), ty);
             }
-            CoreStmt::Block(stmts) => {
+            Stmt::Block(stmts) => {
                 self.decls.push();
                 self.initialized.push();
 
@@ -85,54 +88,65 @@ impl TypeChecker {
                 self.decls.pop();
                 self.initialized.pop();
             }
-            CoreStmt::If(cond, then, otherwise) => {
-                self.check(CoreType::Bool, cond)?;
+            Stmt::If(cond, then, otherwise) => {
+                self.check(Type::Bool, cond)?;
                 self.validate(expected, then)?;
 
                 if let Some(otherwise) = otherwise {
                     self.validate(expected, otherwise)?;
                 }
             }
-            CoreStmt::While(expr, stmt) => {
-                self.check(CoreType::Bool, expr)?;
+            Stmt::While(expr, stmt) => {
+                self.check(Type::Bool, expr)?;
                 self.validate(expected, stmt);
+            }
+            Stmt::For(init, cond, step, body) => {
+                if let Some(init) = init {
+                    self.assert_decl_assign(init)?;
+                    self.validate(expected, init)?;
+                }
+
+                self.check(Type::Bool, cond)?;
+
+                if let Some(step) = step {
+                    self.assert_decl_assign(step)?;
+                    self.validate(expected, step)?;
+                }
+
+                self.validate(expected, body)?;
             }
         };
 
         Ok(())
     }
 
-    pub fn check<'a>(
-        &mut self,
-        expected: CoreType,
-        expr: &'a CoreExpr,
-    ) -> Result<(), TypeCheckError<'a>> {
+    pub fn check<'a>(&mut self, expected: Type, expr: &'a Expr) -> Result<(), TypeCheckError<'a>> {
         let synthesized = match expr {
-            CoreExpr::Int(_, _) => CoreType::Int,
-            CoreExpr::Bool(_, _) => CoreType::Bool,
-            CoreExpr::Ident(name, _) => {
+            Expr::Int(_, _) => Type::Int,
+            Expr::Bool(_, _) => Type::Bool,
+            Expr::Ident(name, _) => {
                 if self.initialized.lookup(name).is_none() {
                     return Err(TypeCheckError::VariableUndeclared(name));
                 }
 
                 *self.initialized.lookup(name).unwrap()
             }
-            CoreExpr::Unary(op, rhs) => {
+            Expr::Unary(op, rhs) => {
                 let constraint = op.expected_types(expected);
                 let synthesized_ty = op.synthesized_type();
                 constraint.check(self, &[rhs]);
 
                 synthesized_ty
             }
-            CoreExpr::Binary(op, lhs, rhs) => {
+            Expr::Binary(op, lhs, rhs) => {
                 let constraint = op.expected_types(expected);
                 let synthesized_ty = op.synthesized_type();
                 constraint.check(self, &[lhs, rhs])?;
 
                 synthesized_ty
             }
-            CoreExpr::Ternary(cond, then, otherwise) => {
-                self.check(CoreType::Bool, cond)?;
+            Expr::Ternary(cond, then, otherwise) => {
+                self.check(Type::Bool, cond)?;
                 self.check(expected.clone(), &then)?;
                 self.check(expected, &otherwise)?;
 
@@ -144,7 +158,7 @@ impl TypeChecker {
             return Ok(());
         }
 
-        if let CoreExpr::Ident(name, _) = expr {
+        if let Expr::Ident(name, _) = expr {
             return Err(TypeCheckError::UnexpectedVariableType {
                 name,
                 span: expr.span(),
@@ -159,10 +173,18 @@ impl TypeChecker {
             got: synthesized,
         })
     }
+
+    fn assert_decl_assign<'a>(&self, stmt: &'a Stmt) -> Result<(), TypeCheckError<'a>> {
+        if !matches!(stmt, Stmt::Decl(_, _, _)) || !matches!(stmt, Stmt::Assign(_, _, _)) {
+            return Err(TypeCheckError::ExpectedDeclAssign { got: stmt });
+        }
+
+        Ok(())
+    }
 }
 
 enum TypeVariable {
-    Exact(CoreType),
+    Exact(Type),
 }
 
 struct TypeConstraint<const N: usize> {
@@ -177,7 +199,7 @@ impl<const N: usize> TypeConstraint<N> {
     pub fn check<'a>(
         &self,
         checker: &mut TypeChecker,
-        params: &[&'a CoreExpr; N],
+        params: &[&'a Expr; N],
     ) -> Result<(), TypeCheckError<'a>> {
         for (tvar, expr) in Iter::zip(self.variables.iter(), params.iter()) {
             let TypeVariable::Exact(ty) = tvar;
@@ -189,28 +211,26 @@ impl<const N: usize> TypeConstraint<N> {
 }
 
 trait TypeCheckableOperation<const N: usize> {
-    fn expected_types(&self, expected: CoreType) -> TypeConstraint<N>;
-    fn synthesized_type(&self) -> CoreType;
+    fn expected_types(&self, expected: Type) -> TypeConstraint<N>;
+    fn synthesized_type(&self) -> Type;
 }
 
-impl TypeCheckableOperation<1> for CoreUnaryOp {
-    fn expected_types(&self, _: CoreType) -> TypeConstraint<1> {
+impl TypeCheckableOperation<1> for UnaryOp {
+    fn expected_types(&self, _: Type) -> TypeConstraint<1> {
         match self {
-            Self::Neg | Self::BitwiseNot => {
-                TypeConstraint::new([TypeVariable::Exact(CoreType::Int)])
-            }
+            Self::Neg | Self::BitwiseNot => TypeConstraint::new([TypeVariable::Exact(Type::Int)]),
         }
     }
 
-    fn synthesized_type(&self) -> CoreType {
+    fn synthesized_type(&self) -> Type {
         match self {
-            Self::BitwiseNot | Self::Neg => CoreType::Int,
+            Self::BitwiseNot | Self::Neg => Type::Int,
         }
     }
 }
 
-impl TypeCheckableOperation<2> for CoreBinaryOp {
-    fn expected_types(&self, expected: CoreType) -> TypeConstraint<2> {
+impl TypeCheckableOperation<2> for BinaryOp {
+    fn expected_types(&self, expected: Type) -> TypeConstraint<2> {
         match self {
             Self::Add
             | Self::Sub
@@ -226,8 +246,8 @@ impl TypeCheckableOperation<2> for CoreBinaryOp {
             | Self::LessEq
             | Self::Greater
             | Self::GreaterEq => TypeConstraint::new([
-                TypeVariable::Exact(CoreType::Int),
-                TypeVariable::Exact(CoreType::Int),
+                TypeVariable::Exact(Type::Int),
+                TypeVariable::Exact(Type::Int),
             ]),
 
             Self::Eq | Self::NotEq => {
@@ -236,7 +256,7 @@ impl TypeCheckableOperation<2> for CoreBinaryOp {
         }
     }
 
-    fn synthesized_type(&self) -> CoreType {
+    fn synthesized_type(&self) -> Type {
         match self {
             Self::Add
             | Self::Sub
@@ -247,14 +267,14 @@ impl TypeCheckableOperation<2> for CoreBinaryOp {
             | Self::BitwiseOr
             | Self::BitwiseXor
             | Self::ShiftLeft
-            | Self::ShiftRight => CoreType::Int,
+            | Self::ShiftRight => Type::Int,
 
             Self::Eq
             | Self::NotEq
             | Self::Less
             | Self::LessEq
             | Self::Greater
-            | Self::GreaterEq => CoreType::Bool,
+            | Self::GreaterEq => Type::Bool,
         }
     }
 }
