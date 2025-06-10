@@ -3,8 +3,8 @@ use std::borrow::Cow;
 use chumsky::input::ValueInput;
 use chumsky::prelude::*;
 
-use crate::compile::ast::AST;
 use crate::compile::ast::AssignOp;
+use crate::compile::ast::Ast;
 use crate::compile::ast::BinaryOp;
 use crate::compile::ast::Expr;
 use crate::compile::ast::FunctionDecl;
@@ -17,11 +17,11 @@ use crate::compile::parser::lex::Token;
 
 type ErrorParserExtra<'src> = extra::Err<Rich<'src, Token<'src>, SourcePos>>;
 
-pub fn program_parser<'src, I>() -> impl Parser<'src, I, AST, ErrorParserExtra<'src>>
+pub fn program_parser<'src, I>() -> impl Parser<'src, I, Ast, ErrorParserExtra<'src>>
 where
     I: ValueInput<'src, Token = Token<'src>, Span = SourcePos>,
 {
-    function_parser().map(|fun| AST::FunctionDecl(fun))
+    function_parser().map(|fun| Ast::FunctionDecl(fun))
 }
 
 fn function_parser<'src, I>() -> impl Parser<'src, I, FunctionDecl, ErrorParserExtra<'src>>
@@ -46,7 +46,7 @@ where
                 name: name.to_string(),
                 args: Vec::new(),
                 body,
-                src_pos: ctx.span(),
+                span: ctx.span(),
             };
 
             if "main" != fun.name {
@@ -107,19 +107,25 @@ where
             .then_ignore(just(Token::SEMICOLON))
             .then(simp_stmt.clone().or_not())
             .then_ignore(just(Token::R_ROUND))
-            .map(|((init, condition), body)| {
-                Stmt::For(init.map(Box::new), condition, body.map(Box::new))
+            .then(stmt.clone())
+            .map(|(((init, condition), step), body)| {
+                Stmt::For(
+                    init.map(Box::new),
+                    condition,
+                    step.map(Box::new),
+                    Box::new(body),
+                )
             })
             .boxed();
 
         let break_stmt = just(Token::BREAK)
             .then_ignore(just(Token::SEMICOLON))
-            .to(Stmt::Break)
+            .map_with(|_, ctx| Stmt::Break(ctx.span()))
             .boxed();
 
         let continue_stmt = just(Token::CONTINUE)
             .then_ignore(just(Token::SEMICOLON))
-            .to(Stmt::Continue)
+            .map_with(|_, ctx| Stmt::Continue(ctx.span()))
             .boxed();
 
         let return_stmt = just(Token::RETURN)
@@ -180,16 +186,16 @@ where
 {
     let op = choice((
         just(Token::EQUAL_SIGN).to(AssignOp::Eq),
-        just(Token::ASSIGN_ADD).to(AssignOp::Op(BinaryOp::Add)),
-        just(Token::ASSIGN_SUB).to(AssignOp::Op(BinaryOp::Sub)),
-        just(Token::ASSIGN_MULT).to(AssignOp::Op(BinaryOp::Mul)),
-        just(Token::ASSIGN_DIV).to(AssignOp::Op(BinaryOp::Div)),
-        just(Token::ASSIGN_MOD).to(AssignOp::Op(BinaryOp::Mod)),
-        just(Token::ASSIGN_BIT_AND).to(AssignOp::Op(BinaryOp::BitwiseAnd)),
-        just(Token::ASSIGN_BIT_OR).to(AssignOp::Op(BinaryOp::BitwiseOr)),
-        just(Token::ASSIGN_BIT_XOR).to(AssignOp::Op(BinaryOp::BitwiseXor)),
-        just(Token::ASSIGN_SHIFT_LEFT).to(AssignOp::Op(BinaryOp::ShiftLeft)),
-        just(Token::ASSIGN_SHIFT_RIGHT).to(AssignOp::Op(BinaryOp::ShiftRight)),
+        just(Token::ASSIGN_ADD).to(AssignOp::Add),
+        just(Token::ASSIGN_SUB).to(AssignOp::Sub),
+        just(Token::ASSIGN_MULT).to(AssignOp::Mul),
+        just(Token::ASSIGN_DIV).to(AssignOp::Div),
+        just(Token::ASSIGN_MOD).to(AssignOp::Mod),
+        just(Token::ASSIGN_BIT_AND).to(AssignOp::BitwiseAnd),
+        just(Token::ASSIGN_BIT_OR).to(AssignOp::BitwiseOr),
+        just(Token::ASSIGN_BIT_XOR).to(AssignOp::BitwiseXor),
+        just(Token::ASSIGN_SHIFT_LEFT).to(AssignOp::ShiftLeft),
+        just(Token::ASSIGN_SHIFT_RIGHT).to(AssignOp::ShiftRight),
     ));
 
     lvalue()
