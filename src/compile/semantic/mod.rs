@@ -1,127 +1,30 @@
-pub mod elaboration;
-
-use std::collections::HashMap;
+pub mod controlflow;
+pub mod lowering;
+pub mod typecheck;
 
 use thiserror::Error;
 
-use crate::compile::ast::{AssignOp, FunctionDecl};
+use crate::compile::{
+    ast::{Core, Elaborated},
+    semantic::{controlflow::ControlFlowError, typecheck::TypeCheckError},
+};
 
-use super::ast::{Ast, Expr, Stmt};
+use super::ast::Ast;
 
 #[derive(Error, Debug)]
 pub enum SemanticError {
-    #[error("Variable with name {0} is already declared.")]
-    VariableRedeclared(String),
+    #[error("Type Checking failed: {0}")]
+    TypeCheckingError(#[from] TypeCheckError),
 
-    #[error("Variable {0} is used without being declared.")]
-    VariableUndeclared(String),
+    #[error("Control Flow Analysis returned an error: {0}")]
+    ControlFlowError(#[from] ControlFlowError),
 
-    #[error("Variable {0} is used without being initialized.")]
-    VariableUninitialized(String),
-
-    #[error("Program does not return a value.")]
-    MissingReturn,
-
-    #[error("Integer literal out of bounds.")]
+    #[error("Integer literal out of bounds")]
     IntLiteralOutOfBounds,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum VariableState {
-    Declared,
-    Initialized,
-}
-
-pub struct SemanticAnalysis {
-    has_return: bool,
-    declared_variables: HashMap<String, VariableState>,
-}
-
-impl SemanticAnalysis {
-    fn new() -> SemanticAnalysis {
-        SemanticAnalysis {
-            has_return: false,
-            declared_variables: HashMap::new(),
-        }
-    }
-
-    pub fn analyze(ast: &Ast) -> Result<(), SemanticError> {
-        Self::new()._analyze(ast)
-    }
-
-    pub fn _analyze(&mut self, ast: &Ast) -> Result<(), SemanticError> {
-        let Ast::FunctionDecl(FunctionDecl { body, .. }) = ast;
-
-        for stmt in body.iter() {
-            match stmt {
-                Stmt::Decl(_, name, expr, _) => {
-                    if self.declared_variables.contains_key(name) {
-                        return Err(SemanticError::VariableRedeclared(name.to_string()));
-                    }
-
-                    if let Some(expr) = expr {
-                        self.analyze_expr(expr)?;
-                        self.declared_variables
-                            .insert(name.clone(), VariableState::Initialized);
-                    } else {
-                        self.declared_variables
-                            .insert(name.clone(), VariableState::Declared);
-                    }
-                }
-
-                Stmt::Assign(name, op, expr, _) => {
-                    if !self.declared_variables.contains_key(name) {
-                        return Err(SemanticError::VariableUndeclared(name.to_string()));
-                    }
-
-                    if let AssignOp::Op(_) = op {
-                        if let VariableState::Declared = self.declared_variables.get(name).unwrap()
-                        {
-                            return Err(SemanticError::VariableUninitialized(name.to_string()));
-                        }
-                    }
-
-                    self.analyze_expr(expr)?;
-                    self.declared_variables
-                        .insert(name.clone(), VariableState::Initialized);
-                }
-                Stmt::Return(expr, _) => {
-                    self.analyze_expr(expr)?;
-                    self.has_return = true;
-                }
-                _ => todo!(),
-            }
-        }
-
-        // finally check for return
-        if !self.has_return {
-            return Err(SemanticError::MissingReturn);
-        }
-
-        Ok(())
-    }
-
-    fn analyze_expr(&self, expr: &Expr) -> Result<(), SemanticError> {
-        // TODO: Some day in the future: proper type checking ^w^
-        match expr {
-            Expr::Ident(name, _) => {
-                if !self.declared_variables.contains_key(name) {
-                    return Err(SemanticError::VariableUndeclared(name.clone()));
-                }
-
-                if VariableState::Initialized != *self.declared_variables.get(name).unwrap() {
-                    return Err(SemanticError::VariableUninitialized(name.clone()));
-                }
-
-                Ok(())
-            }
-            Expr::Int(expr, _) => expr.parse().map(|_| ()),
-            Expr::Unary(_, expr) => self.analyze_expr(expr),
-            Expr::Binary(_, expr1, expr2) => {
-                self.analyze_expr(expr1)?;
-                self.analyze_expr(expr2)
-            },
-            _ => todo!(),
-        }
-    }
+pub fn analyze(ast: Ast<Elaborated>) -> Result<Ast<Core>, SemanticError> {
+    controlflow::analyze(&ast)?;
+    let ast = typecheck::check(ast)?;
+    Ok(lowering::lower(ast))
 }
