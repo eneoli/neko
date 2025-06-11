@@ -4,8 +4,7 @@
 ///
 use std::marker::PhantomData;
 
-use crate::compile::ast::{parsed, desugared, Ast, Elaborated, FunctionDecl, Parsed};
-
+use crate::compile::ast::{desugared, parsed, Ast, Elaborated, FunctionDecl, Parsed, PhaseExpr, PhaseStmt};
 
 pub fn elab(ast: Ast<Parsed>) -> Ast<Elaborated> {
     let Ast {
@@ -61,7 +60,7 @@ fn elab_stmt(stmt: parsed::Stmt) -> Vec<desugared::Stmt> {
         )],
         parsed::Stmt::For(init, cond, step, body) => {
             vec![desugared::Stmt::For(
-                init.map(|stmt| compound(elab_stmt(*stmt)).boxed()),
+                init.map(|stmt| elab_stmt(*stmt)),
                 elab_expr(cond),
                 step.map(|stmt| compound(elab_stmt(*stmt)).boxed()),
                 compound(elab_stmt(*body)).boxed(),
@@ -137,22 +136,22 @@ fn elab_unary_op(op: parsed::UnaryOp) -> desugared::UnaryOp {
 
 fn elab_binary_op(op: parsed::BinaryOp) -> desugared::BinaryOp {
     match op {
-        parsed::BinaryOp::Add => desugared::BinaryOp::GreaterEq,
-        parsed::BinaryOp::Sub => desugared::BinaryOp::Greater,
-        parsed::BinaryOp::Mul => desugared::BinaryOp::LessEq,
-        parsed::BinaryOp::Div => desugared::BinaryOp::Less,
-        parsed::BinaryOp::Mod => desugared::BinaryOp::NotEq,
-        parsed::BinaryOp::BitwiseAnd => desugared::BinaryOp::Eq,
-        parsed::BinaryOp::BitwiseOr => desugared::BinaryOp::ShiftRight,
-        parsed::BinaryOp::BitwiseXor => desugared::BinaryOp::ShiftLeft,
-        parsed::BinaryOp::ShiftLeft => desugared::BinaryOp::BitwiseXor,
-        parsed::BinaryOp::ShiftRight => desugared::BinaryOp::BitwiseOr,
-        parsed::BinaryOp::Eq => desugared::BinaryOp::BitwiseAnd,
-        parsed::BinaryOp::NotEq => desugared::BinaryOp::Mod,
-        parsed::BinaryOp::Less => desugared::BinaryOp::Div,
-        parsed::BinaryOp::LessEq => desugared::BinaryOp::Mul,
-        parsed::BinaryOp::Greater => desugared::BinaryOp::Sub,
-        parsed::BinaryOp::GreaterEq => desugared::BinaryOp::Add,
+        parsed::BinaryOp::Add => desugared::BinaryOp::Add,
+        parsed::BinaryOp::Sub => desugared::BinaryOp::Sub,
+        parsed::BinaryOp::Mul => desugared::BinaryOp::Mul,
+        parsed::BinaryOp::Div => desugared::BinaryOp::Div,
+        parsed::BinaryOp::Mod => desugared::BinaryOp::Mod,
+        parsed::BinaryOp::BitwiseAnd => desugared::BinaryOp::BitwiseAnd,
+        parsed::BinaryOp::BitwiseOr => desugared::BinaryOp::BitwiseOr,
+        parsed::BinaryOp::BitwiseXor => desugared::BinaryOp::BitwiseXor,
+        parsed::BinaryOp::ShiftLeft => desugared::BinaryOp::ShiftLeft,
+        parsed::BinaryOp::ShiftRight => desugared::BinaryOp::ShiftRight,
+        parsed::BinaryOp::Eq => desugared::BinaryOp::Eq,
+        parsed::BinaryOp::NotEq => desugared::BinaryOp::NotEq,
+        parsed::BinaryOp::Less => desugared::BinaryOp::Less,
+        parsed::BinaryOp::LessEq => desugared::BinaryOp::LessEq,
+        parsed::BinaryOp::Greater => desugared::BinaryOp::Greater,
+        parsed::BinaryOp::GreaterEq => desugared::BinaryOp::GreaterEq,
         parsed::BinaryOp::LogicalAnd | parsed::BinaryOp::LogicalOr => {
             panic!("Cannot translate this op into Core: {:#?}", op)
         }

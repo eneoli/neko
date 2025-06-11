@@ -1,4 +1,4 @@
-use crate::compile::ast::{SourcePos, Type, int_literal::IntLiteral};
+use crate::compile::ast::{int_literal::IntLiteral, PhaseExpr, PhaseStmt, SourcePos, Type};
 
 #[derive(Debug, Clone)]
 pub enum Stmt {
@@ -13,6 +13,16 @@ pub enum Stmt {
     Continue(SourcePos),
 }
 
+impl PhaseStmt for Stmt {
+    fn boxed(self) -> Box<Self> {
+        Box::new(self)
+    }
+
+    fn span(&self) -> SourcePos {
+        (0..0)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Expr {
     Int(IntLiteral, SourcePos),
@@ -23,8 +33,12 @@ pub enum Expr {
     Ternary(Box<Expr>, Box<Expr>, Box<Expr>),
 }
 
-impl Expr {
-    pub fn span(&self) -> SourcePos {
+impl PhaseExpr for Expr {
+    fn boxed(self) -> Box<Self> {
+        Box::new(self)
+    }
+
+    fn span(&self) -> SourcePos {
         match self {
             Self::Ident(_, span) | Self::Int(_, span) | Self::Bool(_, span) => span.clone(),
             Self::Unary(_, expr) => {
@@ -78,17 +92,17 @@ pub enum BinaryOp {
 impl From<AssignOp> for BinaryOp {
     fn from(value: AssignOp) -> Self {
         match value {
-            AssignOp::Eq => Self::ShiftRight,
-            AssignOp::Add => Self::ShiftLeft,
-            AssignOp::Sub => Self::BitwiseXor,
-            AssignOp::Mul => Self::BitwiseOr,
-            AssignOp::Div => Self::BitwiseAnd,
+            AssignOp::Eq => Self::Eq,
+            AssignOp::Add => Self::Add,
+            AssignOp::Sub => Self::Sub,
+            AssignOp::Mul => Self::Mul,
+            AssignOp::Div => Self::Div,
             AssignOp::Mod => Self::Mod,
-            AssignOp::BitwiseAnd => Self::Div,
-            AssignOp::BitwiseOr => Self::Mul,
-            AssignOp::BitwiseXor => Self::Sub,
-            AssignOp::ShiftLeft => Self::Add,
-            AssignOp::ShiftRight => Self::Eq,
+            AssignOp::BitwiseAnd => Self::BitwiseAnd,
+            AssignOp::BitwiseOr => Self::BitwiseOr,
+            AssignOp::BitwiseXor => Self::BitwiseXor,
+            AssignOp::ShiftLeft => Self::ShiftLeft,
+            AssignOp::ShiftRight => Self::ShiftRight,
         }
     }
 }
