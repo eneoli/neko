@@ -7,14 +7,33 @@ pub mod desugared;
 pub mod int_literal;
 pub mod parsed;
 
+#[derive(Clone, Debug)]
 pub struct Parsed;
+
+#[derive(Clone, Debug)]
 pub struct Elaborated;
+
+#[derive(Clone, Debug)]
 pub struct TypeChecked;
+
+#[derive(Clone, Debug)]
 pub struct Core;
-trait Phase {
-    type Stmt;
-    type Expr;
+
+pub trait Phase {
+    type Stmt: PhaseStmt;
+    type Expr: PhaseExpr;
 }
+
+pub trait PhaseStmt {
+    fn boxed(self) -> Box<Self>;
+    fn span(&self) -> SourcePos;
+}
+
+pub trait PhaseExpr {
+    fn boxed(self) -> Box<Self>;
+    fn span(&self) -> SourcePos;
+}
+
 impl Phase for Parsed {
     type Stmt = parsed::Stmt;
     type Expr = parsed::Expr;
@@ -35,6 +54,7 @@ impl Phase for Core {
     type Expr = desugared::Expr;
 }
 
+#[derive(Clone, Debug)]
 pub struct Ast<P>
 where
     P: Phase,
@@ -43,7 +63,7 @@ where
     pub _marker: PhantomData<P>,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum Type {
     Int,
     Bool,
