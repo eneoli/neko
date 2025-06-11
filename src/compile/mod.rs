@@ -3,13 +3,17 @@ use std::{
     path::PathBuf,
 };
 
-use ast::Ast;
 use chumsky::{Parser, input::Input};
 use ir::sea::Sea;
 use parser::{lex::lexer, parse::program_parser};
-use semantic::SemanticAnalysis;
 
-use crate::{compile::{ir::sea::export, semantic::elaboration}, infra::NekoError};
+use crate::{
+    compile::{
+        ast::{Ast, Elaborated},
+        parser::elaboration,
+    },
+    infra::NekoError,
+};
 
 pub mod asm;
 pub mod ast;
@@ -18,7 +22,6 @@ pub mod parser;
 pub mod semantic;
 
 // Custom macro for compiler pipeline errors
-
 macro_rules! pipeline_error {
     ($msg:expr) => {
         panic!("Compiler Pipeline encourred an error: {}", $msg)
@@ -29,8 +32,6 @@ macro_rules! pipeline_error {
 pub struct Compiler {
     src_path: Option<PathBuf>,
     out_path: Option<PathBuf>,
-    ast: Option<Ast>,
-    sea: Option<Sea>,
 }
 
 impl Compiler {
@@ -51,12 +52,14 @@ impl Compiler {
     }
 
     pub fn compile(&mut self) -> Result<&mut Self, NekoError> {
-        self.parse()?.analyze()?.transform()?.assemble()?;
+        let ast = self.parse()?;
+        let sea = self.transform(ast)?;
+        self.assemble(&sea)?;
 
         Ok(self)
     }
 
-    fn parse(&mut self) -> Result<&mut Self, NekoError> {
+    fn parse(&mut self) -> Result<Ast<Elaborated>, NekoError> {
         let Some(ref src_path) = self.src_path else {
             pipeline_error!("No src path provided")
         };
@@ -91,42 +94,18 @@ impl Compiler {
             }
         };
 
-        self.ast = Some(ast);
-
-        Ok(self)
+        Ok(elaboration::elab(ast))
     }
 
-    fn analyze(&mut self) -> Result<&mut Self, NekoError> {
-        let Some(ref ast) = self.ast else {
-            pipeline_error!("No AST provided.")
-        };
-
-        SemanticAnalysis::analyze(ast)?;
-
-        Ok(self)
+    fn transform(&mut self, ast: Ast<Elaborated>) -> Result<Sea, NekoError> {
+        let core = semantic::analyze(ast)?;
+        let sea = Sea::from_ast(&core);
+        Ok(sea)
     }
 
-    fn transform(&mut self) -> Result<&mut Self, NekoError> {
-        let Some(ref ast) = self.ast else {
-            pipeline_error!("No AST provided.")
-        };
-
-        let core= elaboration::elab(ast);
-        let sea = todo!();
-
-        println!("{}", export::graphiz_dot::export(&sea));
-        self.sea = Some(sea);
-
-        Ok(self)
-    }
-
-    fn assemble(&mut self) -> Result<&mut Self, NekoError> {
+    fn assemble(&mut self, sea: &Sea) -> Result<&mut Self, NekoError> {
         let Some(ref out_path) = self.out_path else {
             pipeline_error!("No output path provided.")
-        };
-
-        let Some(ref sea) = self.sea else {
-            pipeline_error!("No IR generated")
         };
 
         asm::x86::assemble(sea, out_path)?;
