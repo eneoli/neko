@@ -1,4 +1,4 @@
-use crate::compile::ast::{core, desugared, Ast, Core, FunctionDecl, TypeChecked};
+use crate::compile::ast::{core, desugared, Ast, Core, FunctionDecl, PhaseStmt, TypeChecked};
 
 ///
 /// Simplifications after Type Checking was performed.
@@ -53,15 +53,17 @@ fn lower_stmt(stmt: desugared::Stmt) -> Vec<core::Stmt> {
             otherwise.map(|stmt| compound(lower_stmt(*stmt)).boxed()),
         )],
         desugared::Stmt::For(init, cond, step, body) => {
-            // Note: This inlines step before each continue blonging to the for and the end of the body.
+
+            // Note: This inlines step before each continue belonging to the for and the end of the body.
             //       This is sound, because we do not allow shadowing of variables. Therefore variables
             //       in step cannot be bound by declarations inside the loop body.
-            //       We also insert init and the new while loop inside a separate block in order to not
-            //       leak decls in init to the rest of the program.
 
             let mut init_stmts = vec![];
             if let Some(init) = init {
-                init_stmts = lower_stmt(*init);
+                init_stmts = init
+                    .into_iter()
+                    .flat_map(|init| lower_stmt(init))
+                    .collect();
             }
 
             let mut step_stmts = vec![];
