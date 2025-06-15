@@ -60,7 +60,6 @@ impl<'a> InstSelect<'a> {
     }
 
     fn block_asm(&mut self, id: BlockId) -> &mut BlockAsm {
-
         if !self.block_asm.contains_key(&id) {
             self.block_asm.insert(id, BlockAsm::new());
         }
@@ -73,7 +72,6 @@ impl<'a> InstSelect<'a> {
         blocks.sort();
 
         for block in blocks.into_iter() {
-
             if block == 6 {
                 println!("LOL");
             }
@@ -333,7 +331,8 @@ impl<'a> InstSelect<'a> {
                     let value = self.ir.predecessors(id)[i];
                     let (value_temp, value_asm) = self.munch_data_node(value);
 
-                    self.block_asm(self.ir.block(*pred)).phi_asm.extend(
+                    self.block_asm(self.ir.block(*pred)).phi_asm.splice(
+                        0..0,
                         vec![
                             value_asm,
                             vec![Instruction::MOV(
