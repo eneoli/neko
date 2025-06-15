@@ -1,85 +1,210 @@
+use std::collections::HashMap;
+
 use crate::compile::{
-    asm::x86::Instruction,
-    ir::{
-        node::{
-            NodeId,
-            node_kind::{BinaryNodeOp, NodeKind, UnaryNodeOp},
-        },
-        sea::Sea,
-        types::Type,
+    asm::x86::{Instruction, Location, MachineRegister},
+    ir::graph::{
+        BlockId, IrGraph, NodeId,
+        node::{Node, binary::BinaryNodeOp, constant::ConstantNode},
     },
 };
 
-use super::{Location, MachineRegister};
+type Temp = usize;
 
-pub fn select(sea: &Sea) -> Vec<Instruction> {
-    InstSelect::new(sea).munch()
+type Label = usize;
+
+pub fn select(ir: &IrGraph) -> (Vec<Instruction>, HashMap<BlockId, usize>) {
+    InstSelect::new(ir).munch()
+}
+
+#[derive(Clone, Debug)]
+struct BlockAsm {
+    pub exit_asm: Vec<Instruction>,
+    pub phi_asm: Vec<Instruction>,
+}
+
+impl BlockAsm {
+    pub fn new() -> Self {
+        Self {
+            exit_asm: vec![],
+            phi_asm: vec![],
+        }
+    }
+
+    pub fn linearlized(&self) -> Vec<Instruction> {
+        vec![self.phi_asm.clone(), self.exit_asm.clone()].concat()
+    }
 }
 
 struct InstSelect<'a> {
-    sea: &'a Sea,
-    next_temp: u64,
+    ir: &'a IrGraph,
+    next_temp: Temp,
+    phi_temps: HashMap<NodeId, Temp>,
+    block_asm: HashMap<BlockId, BlockAsm>,
 }
 
 impl<'a> InstSelect<'a> {
-    pub fn new(sea: &'a Sea) -> Self {
+    pub fn new(ir: &'a IrGraph) -> Self {
         Self {
-            sea,
+            ir,
             next_temp: 0,
+            phi_temps: HashMap::new(),
+            block_asm: HashMap::new(),
         }
     }
 
-    pub fn munch(&mut self) -> Vec<Instruction> {
-        let Some(end_id) = self.sea.end() else {
-            panic!("No End node present in IR")
+    fn fresh_temp(&mut self) -> Temp {
+        let temp = self.next_temp;
+        self.next_temp = self.next_temp + 1;
+
+        temp
+    }
+
+    fn block_asm(&mut self, id: BlockId) -> &mut BlockAsm {
+
+        if !self.block_asm.contains_key(&id) {
+            self.block_asm.insert(id, BlockAsm::new());
+        }
+
+        self.block_asm.get_mut(&id).unwrap()
+    }
+
+    pub fn munch(mut self) -> (Vec<Instruction>, HashMap<BlockId, usize>) {
+        let mut blocks = self.ir.blocks();
+        blocks.sort();
+
+        for block in blocks.into_iter() {
+
+            if block == 6 {
+                println!("LOL");
+            }
+
+            if block == self.ir.end() {
+                continue;
+            }
+
+            if self.ir.block_exit(block).is_none() {
+                self.block_asm(block);
+                continue;
+            }
+
+            self.munch_block(block);
+        }
+
+        self.linearlize()
+    }
+
+    fn linearlize(self) -> (Vec<Instruction>, HashMap<BlockId, usize>) {
+        let mut instructions = vec![];
+        let mut blocks = HashMap::new();
+
+        instructions.push(Instruction::JMP(self.ir.start()));
+        for (label, block) in self.block_asm.into_iter() {
+            blocks.insert(label, instructions.len());
+            instructions.push(Instruction::Label(label));
+            instructions.extend(block.linearlized());
+        }
+
+        (instructions, blocks)
+    }
+
+    fn munch_block(&mut self, id: BlockId) -> Label {
+        if self.block_asm.contains_key(&id) && self.block_asm[&id].exit_asm.len() > 0 {
+            return id;
+        }
+
+        let block_exit = self.ir.block_exit(id).unwrap();
+        let block_asm = self.munch_control_node(block_exit);
+
+        self.block_asm(id).exit_asm = block_asm;
+
+        id
+    }
+
+    fn munch_control_node(&mut self, id: NodeId) -> Vec<Instruction> {
+        let node = self.ir.node(id).unwrap();
+
+        match node {
+            Node::Return => {
+                let mut effect_asm = vec![];
+                if let Some(effect) = self.ir.side_effect(id) {
+                    effect_asm = self.munch_data_node(effect).1;
+                }
+
+                let rhs = self.ir.rhs(id);
+                let (value_temp, value_asm) = self.munch_data_node(rhs);
+
+                vec![
+                    effect_asm,
+                    value_asm,
+                    vec![
+                        Instruction::MOV(
+                            Location::register(MachineRegister::EAX),
+                            Location::temp(value_temp),
+                        ),
+                        Instruction::RET(None),
+                    ],
+                ]
+                .concat()
+            }
+            Node::Jump => {
+                let target = self.ir.successors(id)[0];
+                let target_label = target;
+
+                let mut effect_asm = vec![];
+                if let Some(effect) = self.ir.side_effect(id) {
+                    effect_asm = self.munch_data_node(effect).1;
+                }
+
+                vec![effect_asm, vec![Instruction::JMP(target_label)]].concat()
+            }
+            Node::CondJump => {
+                let condition = self.ir.predecessors(id)[0];
+                let (cond_temp, cond_asm) = self.munch_data_node(condition);
+
+                let target_then = self.ir.successors(id)[0];
+                let target_then_label = target_then;
+
+                let target_otherwise = self.ir.successors(id)[1];
+                let target_otherwise_label = target_otherwise;
+
+                vec![
+                    cond_asm,
+                    vec![Instruction::CJMP(
+                        Location::temp(cond_temp),
+                        target_then_label,
+                        target_otherwise_label,
+                    )],
+                ]
+                .concat()
+            }
+            _ => unreachable!("Not a control node"),
+        }
+    }
+
+    fn munch_data_node(&mut self, id: NodeId) -> (Temp, Vec<Instruction>) {
+        let node = self.ir.node(id).unwrap();
+
+        let munch_const = |x: &ConstantNode| match x {
+            ConstantNode::Int(value) => Location::Immediate(*value),
+            ConstantNode::Bool(true) => Location::Immediate(1),
+            ConstantNode::Bool(false) => Location::Immediate(0),
         };
 
-        self.traverse_control_node(end_id)
-    }
-
-    fn traverse_data_node(&mut self, node_id: NodeId) -> (u64, Vec<Instruction>) {
-        let node = self.sea.node(node_id);
-
-        // TODO prevent double computations: effect + input
-        let mut effect_asm = vec![];
-        for effect in node.effects.iter() {
-            effect_asm = self.traverse_data_node(*effect).1;
-        }
-
-        let (node_temp, node_asm) = match &node.kind {
-            NodeKind::Constant { ty, ctrl } => {
-                let Type::Int(value) = ty else { todo!() };
-                let ctrl_asm = self.traverse_control_node(*ctrl);
+        let (temp, asm) = match node {
+            Node::Constant(value) => {
                 let temp = self.fresh_temp();
-
                 (
                     temp.clone(),
-                    vec![
-                        ctrl_asm,
-                        vec![Instruction::MOV(
-                            Location::temp(temp),
-                            Location::Immediate(*value),
-                        )],
-                    ]
-                    .concat(),
+                    vec![Instruction::MOV(Location::temp(temp), munch_const(value))],
                 )
             }
-            NodeKind::Unary { op, rhs } => {
-                let (rhs_temp, rhs_asm) = self.traverse_data_node(*rhs);
-                let temp = self.fresh_temp();
+            Node::Binary(op) => {
+                let lhs = self.ir.lhs(id);
+                let rhs = self.ir.rhs(id);
 
-                let asm = match op {
-                    UnaryNodeOp::Neg => vec![
-                        Instruction::MOV(Location::temp(temp), Location::temp(rhs_temp)),
-                        Instruction::NEG(Location::temp(temp)),
-                    ],
-                };
+                let (lhs_temp, lhs_asm) = self.munch_data_node(lhs);
+                let (rhs_temp, rhs_asm) = self.munch_data_node(rhs);
 
-                (temp.clone(), vec![rhs_asm, asm].concat())
-            }
-            NodeKind::Binary { op, lhs, rhs } => {
-                let (lhs_temp, lhs_asm) = self.traverse_data_node(*lhs);
-                let (rhs_temp, rhs_asm) = self.traverse_data_node(*rhs);
                 let temp = self.fresh_temp();
 
                 let asm = match op {
@@ -119,54 +244,152 @@ impl<'a> InstSelect<'a> {
                             Location::register(MachineRegister::EDX),
                         ),
                     ],
+                    BinaryNodeOp::BitwiseAnd => vec![
+                        Instruction::MOV(Location::temp(temp), Location::temp(lhs_temp)),
+                        Instruction::AND(Location::temp(temp), Location::temp(rhs_temp)),
+                    ],
+                    BinaryNodeOp::BitwiseOr => vec![
+                        Instruction::MOV(Location::temp(temp), Location::temp(lhs_temp)),
+                        Instruction::OR(Location::temp(temp), Location::temp(rhs_temp)),
+                    ],
+                    BinaryNodeOp::BitwiseXor => vec![
+                        Instruction::MOV(Location::temp(temp), Location::temp(lhs_temp)),
+                        Instruction::XOR(Location::temp(temp), Location::temp(rhs_temp)),
+                    ],
+                    BinaryNodeOp::ShiftLeft => vec![
+                        Instruction::MOV(Location::temp(temp), Location::temp(lhs_temp)),
+                        Instruction::SAL(Location::temp(temp), Location::temp(rhs_temp)),
+                    ],
+                    BinaryNodeOp::ShiftRight => vec![
+                        Instruction::MOV(Location::temp(temp), Location::temp(lhs_temp)),
+                        Instruction::SAR(Location::temp(temp), Location::temp(rhs_temp)),
+                    ],
+                    BinaryNodeOp::Eq => vec![
+                        Instruction::MOV(Location::temp(temp), Location::temp(lhs_temp)),
+                        Instruction::EQ(Location::temp(temp), Location::temp(rhs_temp)),
+                    ],
+                    BinaryNodeOp::NotEq => vec![
+                        Instruction::MOV(Location::temp(temp), Location::temp(lhs_temp)),
+                        Instruction::NEQ(Location::temp(temp), Location::temp(rhs_temp)),
+                    ],
+                    BinaryNodeOp::Less => vec![
+                        Instruction::MOV(Location::temp(temp), Location::temp(lhs_temp)),
+                        Instruction::LT(Location::temp(temp), Location::temp(rhs_temp)),
+                    ],
+                    BinaryNodeOp::LessEq => vec![
+                        Instruction::MOV(Location::temp(temp), Location::temp(lhs_temp)),
+                        Instruction::LE(Location::temp(temp), Location::temp(rhs_temp)),
+                    ],
+                    BinaryNodeOp::Greater => vec![
+                        Instruction::MOV(Location::temp(temp), Location::temp(rhs_temp)),
+                        Instruction::LT(Location::temp(temp), Location::temp(lhs_temp)),
+                    ],
+                    BinaryNodeOp::GreaterEq => vec![
+                        Instruction::MOV(Location::temp(temp), Location::temp(rhs_temp)),
+                        Instruction::LE(Location::temp(temp), Location::temp(lhs_temp)),
+                    ],
                 };
 
-                (temp.clone(), [lhs_asm, rhs_asm, asm].concat())
+                (temp, vec![lhs_asm, rhs_asm, asm].concat())
             }
-            _ => panic!("{:#?} is not a data node.", node),
+            Node::Ternary => {
+                let preds = self.ir.predecessors(id);
+                let cond = preds[0];
+                let then = preds[1];
+                let otherwise = preds[2];
+
+                let (cond_temp, cond_asm) = self.munch_data_node(cond);
+                let (then_temp, then_asm) = self.munch_data_node(then);
+                let (otherwise_temp, otherwise_asm) = self.munch_data_node(otherwise);
+
+                let temp = self.fresh_temp();
+
+                (
+                    temp,
+                    vec![
+                        cond_asm,
+                        then_asm,
+                        otherwise_asm,
+                        vec![
+                            // TODO
+                        ],
+                    ]
+                    .concat(),
+                )
+            }
+            Node::Phi => {
+                if self.is_phi_set(id) {
+                    return (self.phi_temp(id), vec![]);
+                }
+
+                let phi_temp = self.phi_temp(id);
+                let block = self.ir.block(id);
+                debug_assert_eq!(
+                    self.ir.predecessors(block).len(),
+                    self.ir.predecessors(id).len()
+                );
+
+                for (i, pred) in self.ir.predecessors(block).iter().enumerate() {
+                    let value = self.ir.predecessors(id)[i];
+                    let (value_temp, value_asm) = self.munch_data_node(value);
+
+                    self.block_asm(self.ir.block(*pred)).phi_asm.extend(
+                        vec![
+                            value_asm,
+                            vec![Instruction::MOV(
+                                Location::temp(phi_temp),
+                                Location::temp(value_temp),
+                            )],
+                        ]
+                        .concat(),
+                    );
+                }
+
+                (self.phi_temp(id), vec![])
+            }
+            Node::Undef => (self.fresh_temp(), vec![]),
+            _ => unreachable!("Not a data node: {id}, {:#?}", self.ir.node(id)),
         };
 
-        (node_temp, vec![effect_asm, node_asm].concat())
+        // let phis = self.dependent_phis(id);
+        // let mut phi_asm = vec![];
+        // for phi in phis {
+        //     let phi_temp = self.phi_temp(phi);
+        //     phi_asm.push(Instruction::MOV(
+        //         Location::temp(phi_temp),
+        //         Location::temp(temp),
+        //     ));
+        // }
+
+        (temp, vec![asm].concat())
     }
 
-    fn traverse_control_node(&mut self, node_id: NodeId) -> Vec<Instruction> {
-        let node = self.sea.node(node_id);
-        
-        // TODO prevent double computations: effect + input
-        let mut effect_asm = vec![];
-        for effect in node.effects.iter() {
-            effect_asm = self.traverse_data_node(*effect).1;
+    fn phi_temp(&mut self, id: NodeId) -> Temp {
+        if !self.phi_temps.contains_key(&id) {
+            let temp = self.fresh_temp();
+            self.phi_temps.insert(id, temp);
         }
 
-        let node_asm = match node.kind {
-            NodeKind::Start => vec![],
-            NodeKind::Return { ctrl, value } => {
-                let ctrl_asm = self.traverse_control_node(ctrl);
-                let (value_temp, value_asm) = self.traverse_data_node(value);
-
-                vec![
-                    ctrl_asm,
-                    value_asm,
-                    vec![
-                        Instruction::MOV(
-                            Location::register(MachineRegister::EAX),
-                            Location::temp(value_temp),
-                        ),
-                        Instruction::RET(None),
-                    ],
-                ]
-                .concat()
-            }
-            _ => panic!("{:#?} is not a control node.", node),
-        };
-
-        vec![effect_asm, node_asm].concat()
+        *self.phi_temps.get(&id).unwrap()
     }
 
-    fn fresh_temp(&mut self) -> u64 {
-        let temp = self.next_temp;
-        self.next_temp = self.next_temp + 1;
+    fn is_phi_set(&self, phi: NodeId) -> bool {
+        self.phi_temps.contains_key(&phi)
+    }
 
-        temp
+    fn dependent_phis(&self, id: NodeId) -> Vec<NodeId> {
+        let succs = self.ir.successors(id);
+        let mut phis = vec![];
+
+        for succ in succs {
+            let node = self.ir.node(succ).unwrap();
+            println!("{:#?}", node);
+
+            if let Node::Phi = node {
+                phis.push(succ);
+            }
+        }
+
+        phis
     }
 }

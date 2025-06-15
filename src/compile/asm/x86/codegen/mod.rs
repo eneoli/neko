@@ -131,7 +131,6 @@ pub fn generate(instructions: &Asm) -> Result<String, NekoError> {
 
                 writeln!(&mut asm, "SUB {}, {}", dest, src)?;
             }
-
             Instruction::IMUL(dest, src) => {
                 // Dest can only be a register
                 match dest {
@@ -159,7 +158,7 @@ pub fn generate(instructions: &Asm) -> Result<String, NekoError> {
                     }
                 };
             }
-            Instruction::IDIV(src) => writeln!(&mut asm, "IDIV {}", src)?, // TODO only certain registers
+            Instruction::IDIV(src) => writeln!(&mut asm, "IDIV {}", src)?,
             Instruction::CDQ => {
                 writeln!(&mut asm, "CDQ")?;
             }
@@ -176,6 +175,105 @@ pub fn generate(instructions: &Asm) -> Result<String, NekoError> {
                 } else {
                     writeln!(&mut asm, "RET")?
                 }
+            }
+            Instruction::AND(dest, src) => {
+                if let (Location::Memory(dest), Location::Memory(src)) = (dest, src) {
+                    // Two memory operators forbidden
+                    // Load src in Spill
+                    writeln!(
+                        &mut asm,
+                        "MOV {}, DWORD PTR [rbp-{}]",
+                        MachineRegister::SPILL,
+                        4 * src
+                    )?;
+                    writeln!(
+                        &mut asm,
+                        "AND DWORD PTR [rbp-{}], {}",
+                        4 * dest,
+                        MachineRegister::SPILL
+                    )?;
+
+                    continue;
+                }
+
+                writeln!(&mut asm, "AND {dest}, {src}")?;
+            }
+            Instruction::OR(dest, src) => {
+                if let (Location::Memory(dest), Location::Memory(src)) = (dest, src) {
+                    // Two memory operators forbidden
+                    // Load src in Spill
+                    writeln!(
+                        &mut asm,
+                        "MOV {}, DWORD PTR [rbp-{}]",
+                        MachineRegister::SPILL,
+                        4 * src
+                    )?;
+                    writeln!(
+                        &mut asm,
+                        "OR DWORD PTR [rbp-{}], {}",
+                        4 * dest,
+                        MachineRegister::SPILL
+                    )?;
+
+                    continue;
+                }
+
+                writeln!(&mut asm, "OR {dest}, {src}")?;
+            }
+            Instruction::XOR(dest, src) => {
+                if let (Location::Memory(dest), Location::Memory(src)) = (dest, src) {
+                    // Two memory operators forbidden
+                    // Load src in Spill
+                    writeln!(
+                        &mut asm,
+                        "MOV {}, DWORD PTR [rbp-{}]",
+                        MachineRegister::SPILL,
+                        4 * src
+                    )?;
+                    writeln!(
+                        &mut asm,
+                        "XOR DWORD PTR [rbp-{}], {}",
+                        4 * dest,
+                        MachineRegister::SPILL
+                    )?;
+
+                    continue;
+                }
+
+                writeln!(&mut asm, "XOR {dest}, {src}")?;
+            }
+            Instruction::SAL(dest, src) => todo!(),
+            Instruction::SAR(dest, src) => todo!(),
+            Instruction::EQ(dest, src) => {
+                writeln!(&mut asm, "CMP {dest}, {src}")?;
+                writeln!(&mut asm, "SETE AL")?;
+                writeln!(&mut asm, "MOVZX {dest}, AL")?;
+            },
+            Instruction::NEQ(dest, src) => {
+                writeln!(&mut asm, "CMP {dest}, {src}")?;
+                writeln!(&mut asm, "SETNE AL")?;
+                writeln!(&mut asm, "MOVZX {dest}, AL")?;
+            },
+            Instruction::LT(dest, src) => {
+                writeln!(&mut asm, "CMP {dest}, {src}")?;
+                writeln!(&mut asm, "SETL AL")?;
+                writeln!(&mut asm, "MOVZX {dest}, AL")?;
+            },
+            Instruction::LE(dest, src) => {
+                writeln!(&mut asm, "CMP {dest}, {src}")?;
+                writeln!(&mut asm, "SETLE AL")?;
+                writeln!(&mut asm, "MOVZX {dest}, AL")?;
+            },
+            Instruction::JMP(label) => {
+                writeln!(&mut asm, "JMP .block_{label}")?;
+            }
+            Instruction::CJMP(cond, then, otherwise) => {
+                writeln!(&mut asm, "CMP {cond}, 0")?;
+                writeln!(&mut asm, "JE .block_{otherwise}")?;
+                writeln!(&mut asm, "JMP .block_{then}")?;
+            },
+            Instruction::Label(label) => {
+                writeln!(&mut asm, ".block_{label}:")?;
             }
             Instruction::NOP => {}
         }

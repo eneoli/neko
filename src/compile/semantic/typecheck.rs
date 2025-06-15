@@ -245,11 +245,6 @@ impl TypeChecker {
 
                 *self.defs.lookup(name).unwrap()
             }
-            Expr::Unary(op, rhs) => {
-                let constraint = op.expected_types();
-                constraint.check(self, &[rhs])?;
-                op.synthesized_type()
-            }
             Expr::Binary(op, lhs, rhs) => {
                 let constraint = op.expected_types();
                 constraint.check(self, &[lhs, rhs])?;

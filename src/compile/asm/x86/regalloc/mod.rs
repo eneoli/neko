@@ -3,12 +3,12 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
-use crate::compile::asm::x86::{regalloc::liveness::LiveIn, Asm, Instruction, Location, MachineRegister, Register};
+use crate::compile::{asm::x86::{regalloc::liveness::LiveIn, Asm, Instruction, Label, Location, MachineRegister, Register}, ir::graph::BlockId};
 
 mod liveness;
 
-pub fn allocate(asm: Vec<Instruction>) -> Asm {
-    Allocator::new(asm).allocate()
+pub fn allocate(instructions: (Vec<Instruction>, HashMap<BlockId, Label>)) -> Asm {
+    Allocator::new(instructions).allocate()
 }
 
 struct Node {
@@ -62,15 +62,18 @@ impl InterferenceGraph {
 
 struct Allocator {
     asm: Vec<Instruction>,
+    labels: HashMap<BlockId, usize>,
     live_in: Option<LiveIn>,
     graph: Option<InterferenceGraph>,
     stack_size: usize,
 }
 
 impl Allocator {
-    pub fn new(asm: Vec<Instruction>) -> Self {
+    pub fn new(instructions: (Vec<Instruction>, HashMap<BlockId, usize>)) -> Self {
+        let (asm, blocks) = instructions;
         Self {
             asm,
+            labels: blocks,
             live_in: None,
             graph: None,
             stack_size: 0,
@@ -79,7 +82,7 @@ impl Allocator {
 
     pub fn allocate(mut self) -> Asm {
         // 1. Liveness Analysis
-        self.live_in = liveness::analyze(&self.asm).into();
+        self.live_in = liveness::analyze(&self.asm, &self.labels).into();
 
         // 2. Build the interference graph
         let register_mapping = self.build_interference_graph();

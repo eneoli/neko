@@ -4,12 +4,12 @@ use std::{
 };
 
 use chumsky::{Parser, input::Input};
-use ir::sea::Sea;
 use parser::{lex::lexer, parse::program_parser};
 
 use crate::{
     compile::{
         ast::{Ast, Elaborated},
+        ir::graph::{IrGraph, ssa_translation},
         parser::elaboration,
     },
     infra::NekoError,
@@ -53,8 +53,8 @@ impl Compiler {
 
     pub fn compile(&mut self) -> Result<&mut Self, NekoError> {
         let ast = self.parse()?;
-        let sea = self.transform(ast)?;
-        self.assemble(&sea)?;
+        let ir = self.transform(ast)?;
+        self.assemble(&ir)?;
 
         Ok(self)
     }
@@ -97,18 +97,19 @@ impl Compiler {
         Ok(elaboration::elab(ast))
     }
 
-    fn transform(&mut self, ast: Ast<Elaborated>) -> Result<Sea, NekoError> {
+    fn transform(&mut self, ast: Ast<Elaborated>) -> Result<IrGraph, NekoError> {
         let core = semantic::analyze(ast)?;
-        let sea = Sea::from_ast(&core);
-        Ok(sea)
+        let ir = ssa_translation::construct_graph_from_core(core);
+        
+        Ok(ir)
     }
 
-    fn assemble(&mut self, sea: &Sea) -> Result<&mut Self, NekoError> {
+    fn assemble(&mut self, ir: &IrGraph) -> Result<&mut Self, NekoError> {
         let Some(ref out_path) = self.out_path else {
             pipeline_error!("No output path provided.")
         };
 
-        asm::x86::assemble(sea, out_path)?;
+        asm::x86::assemble(&ir, out_path)?;
 
         Ok(self)
     }

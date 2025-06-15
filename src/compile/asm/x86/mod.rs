@@ -1,17 +1,16 @@
 use std::{
-    fs::File,
-    io::{self, Write},
-    path::Path,
-    process::Command,
+    collections::HashMap, fs::File, io::{self, Write}, path::Path, process::Command
 };
 
 use rand::distr::{Alphanumeric, SampleString};
 
-use crate::compile::ir::sea::Sea;
+use crate::compile::ir::graph::{BlockId, IrGraph};
 
 pub mod codegen;
 pub mod inst;
 pub mod regalloc;
+
+pub type Label = usize;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum MachineRegister {
@@ -36,8 +35,7 @@ pub enum MachineRegister {
 }
 
 impl MachineRegister {
-
-    pub const SPILL : MachineRegister = MachineRegister::R15D;
+    pub const SPILL: MachineRegister = MachineRegister::R15D;
 
     pub fn num_free_regs() -> usize {
         11
@@ -64,7 +62,7 @@ impl MachineRegister {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum Register {
     Machine(MachineRegister),
-    Temp(u64),
+    Temp(usize),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -75,7 +73,7 @@ pub enum Location {
 }
 
 impl Location {
-    pub fn temp(id: u64) -> Location {
+    pub fn temp(id: usize) -> Location {
         Location::Register(Register::Temp(id))
     }
     pub fn register(reg: MachineRegister) -> Location {
@@ -88,7 +86,7 @@ impl Location {
 
     pub fn from_index(idx: u64) -> Location {
         if idx < MachineRegister::num_free_regs() as u64 {
-            return Location::register(MachineRegister::from_index(idx).unwrap())
+            return Location::register(MachineRegister::from_index(idx).unwrap());
         }
 
         Location::Memory(idx - MachineRegister::num_free_regs() as u64)
@@ -112,16 +110,28 @@ impl Location {
 #[derive(Clone, Debug)]
 pub enum Instruction {
     NOP,
+    Label(Label),
     MOV(Location, Location),  // Two memory operands forbidden
     ADD(Location, Location),  // Two memory operands forbidden
     SUB(Location, Location),  // Two memory operands forbidden
     IMUL(Location, Location), // Dest can only be a register
+    AND(Location, Location),  // Two memory operands forbidden
+    OR(Location, Location),   // Two memory operands forbidden
+    XOR(Location, Location),  // Two memory operands forbidden
+    SAL(Location, Location),  // TODO
+    SAR(Location, Location),  // TODO
+    EQ(Location, Location),   // Result in dest, Stub
+    NEQ(Location, Location),  // Result in dest, Stub
+    LT(Location, Location),   // Result in dest, Stub
+    LE(Location, Location),   // Result in dest, Stub
     NEG(Location),
     IDIV(Location), // dest is AX, DX:AX, or EDX:EAX
     CDQ,
     PUSH(Location),
     LEAVE,
     RET(Option<u32>),
+    JMP(Label),
+    CJMP(Location, Label, Label),
 }
 
 impl Instruction {
@@ -130,9 +140,19 @@ impl Instruction {
             Self::MOV(dest, src)
             | Self::ADD(dest, src)
             | Self::SUB(dest, src)
-            | Self::IMUL(dest, src) => vec![dest, src],
-            Self::NEG(loc) | Self::IDIV(loc) | Self::PUSH(loc) => vec![loc],
-            Self::NOP | Self::CDQ | Self::LEAVE | Self::RET(_) => Vec::new(),
+            | Self::IMUL(dest, src)
+            | Self::AND(dest, src)
+            | Self::OR(dest, src)
+            | Self::XOR(dest, src)
+            | Self::SAL(dest, src)
+            | Self::SAR(dest, src)
+            | Self::EQ(dest, src)
+            | Self::NEQ(dest, src)
+            | Self::LT(dest, src)
+            | Self::LE(dest, src) => vec![dest, src],
+
+            Self::NEG(loc) | Self::IDIV(loc) | Self::PUSH(loc) | Self::CJMP(loc, _, _) => vec![loc],
+            Self::NOP | Self::Label(_) | Self::CDQ | Self::LEAVE | Self::RET(_) | Self::JMP(_) => Vec::new(),
         }
     }
 
@@ -141,9 +161,19 @@ impl Instruction {
             Self::MOV(dest, src)
             | Self::ADD(dest, src)
             | Self::SUB(dest, src)
-            | Self::IMUL(dest, src) => vec![dest, src],
-            Self::NEG(loc) | Self::IDIV(loc) | Self::PUSH(loc) => vec![loc],
-            Self::NOP | Self::CDQ | Self::LEAVE | Self::RET(_) => Vec::new(),
+            | Self::IMUL(dest, src)
+            | Self::AND(dest, src)
+            | Self::OR(dest, src)
+            | Self::XOR(dest, src)
+            | Self::SAL(dest, src)
+            | Self::SAR(dest, src)
+            | Self::EQ(dest, src)
+            | Self::NEQ(dest, src)
+            | Self::LT(dest, src)
+            | Self::LE(dest, src) => vec![dest, src],
+
+            Self::NEG(loc) | Self::IDIV(loc) | Self::PUSH(loc) | Self::CJMP(loc, _, _) => vec![loc],
+            Self::NOP | Self::Label(_) | Self::CDQ | Self::LEAVE | Self::RET(_) | Self::JMP(_) => Vec::new(),
         }
     }
 
@@ -172,41 +202,58 @@ impl Instruction {
             | Self::SUB(dest, _)
             | Self::IMUL(dest, _)
             | Self::NEG(dest)
-            | Self::IDIV(dest) => {
+            | Self::IDIV(dest)
+            | Self::AND(dest, _)
+            | Self::OR(dest, _)
+            | Self::XOR(dest, _)
+            | Self::SAL(dest, _)
+            | Self::SAR(dest, _)
+            | Self::EQ(dest, _)
+            | Self::NEQ(dest, _)
+            | Self::LT(dest, _)
+            | Self::LE(dest, _) => {
                 if let Some(reg) = dest.get_register() {
                     return vec![reg];
                 }
 
                 Vec::new()
             }
-            Self::NOP | Self::CDQ | Self::LEAVE | Self::RET(_) | Self::PUSH(_) => Vec::new(),
+
+            Self::NOP
+            | Self::Label(_)
+            | Self::CDQ
+            | Self::LEAVE
+            | Self::RET(_)
+            | Self::PUSH(_)
+            | Self::JMP(_)
+            | Self::CJMP(_, _, _) => Vec::new(),
         }
     }
 }
 
 pub struct Asm {
-    instructions: Vec<Instruction>,
+    asm: Vec<Instruction>,
     stack_size: usize,
 }
 
 impl Asm {
-    pub fn new(instructions: Vec<Instruction>, stack_size: usize) -> Self {
+    pub fn new(asm: Vec<Instruction>, stack_size: usize) -> Self {
         Self {
-            instructions,
+            asm,
             stack_size,
         }
     }
 
     pub fn len(&self) -> usize {
-        self.instructions.len()
+        self.asm.len()
     }
 
     pub fn instructions(&self) -> &Vec<Instruction> {
-        &self.instructions
+        &self.asm
     }
 
     pub fn instructions_mut(&mut self) -> &mut Vec<Instruction> {
-        &mut self.instructions
+        &mut self.asm
     }
 
     pub fn stack_size(&self) -> usize {
@@ -214,10 +261,10 @@ impl Asm {
     }
 }
 
-pub fn generate_assembly(sea: &Sea) -> String {
-    let instructions = inst::select(sea);
+pub fn generate_assembly(ir: &IrGraph) -> String {
+    let instructions = inst::select(ir);
     println!("Inst select done");
-    println!("Num instructions: {}", instructions.len());
+    println!("{:#?}", instructions);
     let asm = regalloc::allocate(instructions);
     println!("Allocation done");
     let x = codegen::generate(&asm).unwrap();
@@ -225,7 +272,7 @@ pub fn generate_assembly(sea: &Sea) -> String {
     x
 }
 
-pub fn assemble(sea: &Sea, out_path: &Path) -> Result<(), io::Error> {
+pub fn assemble(ir: &IrGraph, out_path: &Path) -> Result<(), io::Error> {
     let Some(binary_file_name) = out_path.file_name() else {
         panic!("Invalid file name.")
     };
@@ -234,7 +281,7 @@ pub fn assemble(sea: &Sea, out_path: &Path) -> Result<(), io::Error> {
         panic!("Invalid parent.")
     };
 
-    let asm = generate_assembly(sea);
+    let asm = generate_assembly(ir);
 
     let slug: String = Alphanumeric.sample_string(&mut rand::rng(), 8);
     let asm_file_name = format!("{}.{}.s", binary_file_name.to_str().unwrap(), slug);

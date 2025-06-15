@@ -4,7 +4,9 @@
 ///
 use std::marker::PhantomData;
 
-use crate::compile::ast::{desugared, parsed, Ast, Elaborated, FunctionDecl, Parsed, PhaseExpr, PhaseStmt};
+use crate::compile::ast::{
+    Ast, Elaborated, FunctionDecl, Parsed, PhaseExpr, PhaseStmt, desugared, parsed,
+};
 
 pub fn elab(ast: Ast<Parsed>) -> Ast<Elaborated> {
     let Ast {
@@ -102,7 +104,16 @@ fn elab_expr(expr: parsed::Expr) -> desugared::Expr {
 
             match op {
                 parsed::UnaryOp::LogicalNot => desugared::Expr::Ternary(rhs, false_expr, true_expr),
-                _ => desugared::Expr::Unary(elab_unary_op(op), rhs),
+                parsed::UnaryOp::BitwiseNot => desugared::Expr::Binary(
+                    desugared::BinaryOp::BitwiseXor,
+                    desugared::Expr::max_int(rhs_span).boxed(),
+                    rhs,
+                ),
+                parsed::UnaryOp::Neg => desugared::Expr::Binary(
+                    desugared::BinaryOp::Sub,
+                    desugared::Expr::zero(rhs_span).boxed(),
+                    rhs,
+                ),
             }
         }
         parsed::Expr::Binary(op, lhs, rhs) => {

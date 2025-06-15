@@ -1,4 +1,4 @@
-use crate::compile::ast::{SourcePos, Type, desugared};
+use crate::compile::ast::{PhaseStmt, SourcePos, Type, desugared};
 
 #[derive(Debug, Clone)]
 pub enum Stmt {
@@ -12,8 +12,19 @@ pub enum Stmt {
     Continue(SourcePos),
 }
 
-impl Stmt {
-    pub fn boxed(self) -> Box<Self> {
+impl PhaseStmt for Stmt {
+    fn boxed(self) -> Box<Self> {
         Box::new(self)
+    }
+
+    fn span(&self) -> SourcePos {
+        match self {
+            Self::Decl(_, _, span)
+            | Self::Break(span)
+            | Self::Continue(span)
+            | Self::Assign(_, _, span)
+            | Self::Return(_, span) => span.clone(),
+            _ => (0..0), // TODO
+        }
     }
 }
