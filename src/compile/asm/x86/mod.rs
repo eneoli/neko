@@ -264,7 +264,7 @@ impl Asm {
 pub fn generate_assembly(ir: &IrGraph) -> String {
     let instructions = inst::select(ir);
     println!("Inst select done");
-    println!("{:#?}", instructions);
+    // println!("{:#?}", instructions);
     let asm = regalloc::allocate(instructions);
     println!("Allocation done");
     let x = codegen::generate(&asm).unwrap();

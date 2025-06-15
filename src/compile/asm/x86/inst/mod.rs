@@ -72,10 +72,6 @@ impl<'a> InstSelect<'a> {
         blocks.sort();
 
         for block in blocks.into_iter() {
-            if block == 6 {
-                println!("LOL");
-            }
-
             if block == self.ir.end() {
                 continue;
             }
@@ -319,6 +315,10 @@ impl<'a> InstSelect<'a> {
                 if self.is_phi_set(id) {
                     return (self.phi_temp(id), vec![]);
                 }
+
+                // if self.ir.predecessors(id).len() == 0 {
+                //     return (self.phi_temp(id), vec![]);
+                // }
 
                 let phi_temp = self.phi_temp(id);
                 let block = self.ir.block(id);

@@ -245,25 +245,77 @@ pub fn generate(instructions: &Asm) -> Result<String, NekoError> {
             Instruction::SAL(dest, src) => todo!(),
             Instruction::SAR(dest, src) => todo!(),
             Instruction::EQ(dest, src) => {
+                let src = spill(&mut asm, dest, src)?;
+
                 writeln!(&mut asm, "CMP {dest}, {src}")?;
                 writeln!(&mut asm, "SETE AL")?;
-                writeln!(&mut asm, "MOVZX {dest}, AL")?;
-            },
+
+                if let Location::Memory(dest) = dest {
+                    writeln!(&mut asm, "MOVZX {}, AL", MachineRegister::SPILL)?;
+                    writeln!(
+                        asm,
+                        "MOV DWORD PTR [rbp-{}], {}",
+                        4 * dest,
+                        MachineRegister::SPILL,
+                    )?;
+                } else {
+                    writeln!(&mut asm, "MOVZX {dest}, AL")?;
+                }
+            }
             Instruction::NEQ(dest, src) => {
+                let src = spill(&mut asm, dest, src)?;
+
                 writeln!(&mut asm, "CMP {dest}, {src}")?;
                 writeln!(&mut asm, "SETNE AL")?;
-                writeln!(&mut asm, "MOVZX {dest}, AL")?;
-            },
+
+                if let Location::Memory(dest) = dest {
+                    writeln!(&mut asm, "MOVZX {}, AL", MachineRegister::SPILL)?;
+                    writeln!(
+                        asm,
+                        "MOV DWORD PTR [rbp-{}], {}",
+                        4 * dest,
+                        MachineRegister::SPILL,
+                    )?;
+                } else {
+                    writeln!(&mut asm, "MOVZX {dest}, AL")?;
+                }
+            }
             Instruction::LT(dest, src) => {
+                let src = spill(&mut asm, dest, src)?;
+
                 writeln!(&mut asm, "CMP {dest}, {src}")?;
                 writeln!(&mut asm, "SETL AL")?;
-                writeln!(&mut asm, "MOVZX {dest}, AL")?;
-            },
+
+                if let Location::Memory(dest) = dest {
+                    writeln!(&mut asm, "MOVZX {}, AL", MachineRegister::SPILL)?;
+                    writeln!(
+                        asm,
+                        "MOV DWORD PTR [rbp-{}], {}",
+                        4 * dest,
+                        MachineRegister::SPILL,
+                    )?;
+                } else {
+                    writeln!(&mut asm, "MOVZX {dest}, AL")?;
+                }
+            }
             Instruction::LE(dest, src) => {
+                let src = spill(&mut asm, dest, src)?;
+
                 writeln!(&mut asm, "CMP {dest}, {src}")?;
                 writeln!(&mut asm, "SETLE AL")?;
-                writeln!(&mut asm, "MOVZX {dest}, AL")?;
-            },
+
+                if let Location::Memory(dest) = dest {
+                    writeln!(&mut asm, "MOVZX {}, AL", MachineRegister::SPILL)?;
+                    writeln!(
+                        asm,
+                        "MOV DWORD PTR [rbp-{}], {}",
+                        4 * dest,
+                        MachineRegister::SPILL,
+                    )?;
+                } else {
+                    writeln!(&mut asm, "MOVZX {dest}, AL")?;
+                }
+            }
             Instruction::JMP(label) => {
                 writeln!(&mut asm, "JMP .block_{label}")?;
             }
@@ -271,7 +323,7 @@ pub fn generate(instructions: &Asm) -> Result<String, NekoError> {
                 writeln!(&mut asm, "CMP {cond}, 0")?;
                 writeln!(&mut asm, "JE .block_{otherwise}")?;
                 writeln!(&mut asm, "JMP .block_{then}")?;
-            },
+            }
             Instruction::Label(label) => {
                 writeln!(&mut asm, ".block_{label}:")?;
             }
@@ -280,4 +332,21 @@ pub fn generate(instructions: &Asm) -> Result<String, NekoError> {
     }
 
     Ok(asm)
+}
+
+fn spill(asm: &mut String, dest: &Location, src: &Location) -> Result<Location, NekoError> {
+    if let (Location::Memory(_), Location::Memory(src)) = (dest, src) {
+        // Two memory operators forbidden
+        // Load src in Spill
+        writeln!(
+            asm,
+            "MOV {}, DWORD PTR [rbp-{}]",
+            MachineRegister::SPILL,
+            4 * src
+        )?;
+
+        return Ok(Location::register(MachineRegister::SPILL));
+    }
+
+    Ok(*src)
 }

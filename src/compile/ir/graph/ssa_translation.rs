@@ -206,6 +206,7 @@ impl SsaTranslation {
 
                 // Add Loop Body and afer loop blocks
                 let body_block = self.new_block();
+                self.seal_block(body_block);
                 let next_block = self.new_block();
                 self.push_loop(condition_block, next_block);
 
