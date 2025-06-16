@@ -290,7 +290,7 @@ impl<'a> InstSelect<'a> {
         let mut fresh_temp = false;
         if self.visited_data_nodes.contains_key(&id) {
             temp = self.visited_data_nodes[&id];
-            // return (temp, vec![]);
+            return (temp, vec![]);
         } else {
             fresh_temp = true;
             if let Node::Phi = self.ir.node(id).unwrap() {
