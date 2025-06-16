@@ -242,8 +242,26 @@ pub fn generate(instructions: &Asm) -> Result<String, NekoError> {
 
                 writeln!(&mut asm, "XOR {dest}, {src}")?;
             }
-            Instruction::SAL(dest, src) => todo!(),
-            Instruction::SAR(dest, src) => todo!(),
+            Instruction::SAL(dest, src) => {
+                let mut src = src.clone();
+                if !matches!(src, Location::Register(_)) {
+                    writeln!(&mut asm, "MOV {}, {src}", MachineRegister::SPILL)?;
+                    src = Location::register(MachineRegister::SPILL);
+                }
+
+                writeln!(&mut asm, "MOV ECX, {src}")?;
+                writeln!(&mut asm, "SAL {dest}, CL")?;
+            }
+            Instruction::SAR(dest, src) => {
+                let mut src = src.clone();
+                if !matches!(src, Location::Register(_)) {
+                    writeln!(&mut asm, "MOV {}, {src}", MachineRegister::SPILL)?;
+                    src = Location::register(MachineRegister::SPILL);
+                }
+
+                writeln!(&mut asm, "MOV ECX, {src}")?;
+                writeln!(&mut asm, "SAR {dest}, CL")?;
+            }
             Instruction::EQ(dest, src) => {
                 let src = spill(&mut asm, dest, src)?;
 

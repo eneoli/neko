@@ -68,8 +68,8 @@ impl ConstantFoldingOptimizer {
                 BinaryNodeOp::BitwiseAnd => (a as i32) & (b as i32),
                 BinaryNodeOp::BitwiseOr => (a as i32) | (b as i32),
                 BinaryNodeOp::BitwiseXor => (a as i32) ^ (b as i32),
-                BinaryNodeOp::ShiftLeft => (a as i32) << (b as i32),
-                BinaryNodeOp::ShiftRight => (a as i32) >> (b as i32),
+                BinaryNodeOp::ShiftLeft => i32::wrapping_shl(a as i32, b),
+                BinaryNodeOp::ShiftRight => i32::wrapping_shr(a as i32, b),
                 _ => unreachable!(),
             } as u32;
 

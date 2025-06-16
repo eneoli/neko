@@ -5,7 +5,8 @@ use chumsky::container::Seq;
 use crate::compile::{
     asm::x86::{Instruction, Location, MachineRegister},
     ir::graph::{
-        node::{binary::BinaryNodeOp, constant::ConstantNode, Node}, BlockId, IrGraph, NodeId
+        BlockId, IrGraph, NodeId,
+        node::{Node, binary::BinaryNodeOp, constant::ConstantNode},
     },
 };
 
@@ -344,18 +345,25 @@ impl<'a> InstSelect<'a> {
                     temp,
                     vec![
                         cond_asm,
-                        then_asm,
-                        otherwise_asm,
                         vec![
-                            Instruction::CJMP(Location::temp(cond_temp), then_label, otherwise_label),
+                            Instruction::CJMP(
+                                Location::temp(cond_temp),
+                                then_label,
+                                otherwise_label,
+                            ),
                             Instruction::Label(then_label),
+                        ],
+                        then_asm,
+                        vec![
                             Instruction::MOV(Location::temp(temp), Location::temp(then_temp)),
                             Instruction::JMP(next_label),
                             Instruction::Label(otherwise_label),
+                        ],
+                        otherwise_asm,
+                        vec![
                             Instruction::MOV(Location::temp(temp), Location::temp(otherwise_temp)),
                             // Instruction::JMP(next_label),
                             Instruction::Label(next_label),
-
                         ],
                     ]
                     .concat(),
@@ -425,14 +433,14 @@ impl<'a> InstSelect<'a> {
     fn is_phi_set(&self, phi: NodeId) -> bool {
         self.phi_temps.contains_key(&phi)
     }
-    
+
     fn label(&mut self) -> Label {
         let label = self.next_label;
         self.next_label = self.next_label + 1;
 
         label
     }
-    
+
     fn dependent_phis(&self, id: NodeId) -> Vec<NodeId> {
         let succs = self.ir.successors(id);
         let mut phis = vec![];

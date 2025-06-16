@@ -1,10 +1,13 @@
 use std::{
-    collections::HashMap, fs::File, io::{self, Write}, path::Path, process::Command
+    fs::File,
+    io::{self, Write},
+    path::Path,
+    process::Command,
 };
 
 use rand::distr::{Alphanumeric, SampleString};
 
-use crate::compile::ir::graph::{BlockId, IrGraph};
+use crate::compile::ir::graph::IrGraph;
 
 pub mod codegen;
 pub mod inst;
@@ -152,7 +155,9 @@ impl Instruction {
             | Self::LE(dest, src) => vec![dest, src],
 
             Self::NEG(loc) | Self::IDIV(loc) | Self::PUSH(loc) | Self::CJMP(loc, _, _) => vec![loc],
-            Self::NOP | Self::Label(_) | Self::CDQ | Self::LEAVE | Self::RET(_) | Self::JMP(_) => Vec::new(),
+            Self::NOP | Self::Label(_) | Self::CDQ | Self::LEAVE | Self::RET(_) | Self::JMP(_) => {
+                Vec::new()
+            }
         }
     }
 
@@ -173,7 +178,9 @@ impl Instruction {
             | Self::LE(dest, src) => vec![dest, src],
 
             Self::NEG(loc) | Self::IDIV(loc) | Self::PUSH(loc) | Self::CJMP(loc, _, _) => vec![loc],
-            Self::NOP | Self::Label(_) | Self::CDQ | Self::LEAVE | Self::RET(_) | Self::JMP(_) => Vec::new(),
+            Self::NOP | Self::Label(_) | Self::CDQ | Self::LEAVE | Self::RET(_) | Self::JMP(_) => {
+                Vec::new()
+            }
         }
     }
 
@@ -238,10 +245,7 @@ pub struct Asm {
 
 impl Asm {
     pub fn new(asm: Vec<Instruction>, stack_size: usize) -> Self {
-        Self {
-            asm,
-            stack_size,
-        }
+        Self { asm, stack_size }
     }
 
     pub fn len(&self) -> usize {
