@@ -20,15 +20,19 @@ pub fn select(ir: &IrGraph) -> (Vec<Instruction>, HashMap<BlockId, usize>) {
 
 #[derive(Clone, Debug)]
 struct BlockAsm {
+    pub work_asm: Vec<Instruction>,
     pub exit_asm: Vec<Instruction>,
     pub phi_asm: HashMap<NodeId, Vec<Instruction>>,
+    pub phi_order: Vec<NodeId>,
 }
 
 impl BlockAsm {
     pub fn new() -> Self {
         Self {
+            work_asm: vec![],
             exit_asm: vec![],
             phi_asm: HashMap::new(),
+            phi_order: vec![],
         }
     }
 }
@@ -119,48 +123,50 @@ impl<'a> InstSelect<'a> {
                 return true;
             }
         }
-        
+
         for some_pred in self.ir.predecessors(id) {
-            if self.has_as_pred(some_pred, pred, visited)  {
+            if self.has_as_pred(some_pred, pred, visited) {
                 return true;
             }
         }
-        
+
         return false;
     }
 
     pub fn linearlize_block(&self, block: &BlockAsm) -> Vec<Instruction> {
         let phis: Vec<NodeId> = block.phi_asm.keys().copied().collect();
 
-        let mut visited = HashSet::new();
-        let mut phi_order = Vec::new();
+        // let mut visited = HashSet::new();
+        let mut phi_order: Vec<_> = block.phi_order.iter().rev().copied().collect();
 
-        for &phi in phis.iter() {
-            Self::phi_dfs(phi, &phis, &mut visited, &mut phi_order, &self.ir);
-        }
-
-        // for i in 0..phi_order.len() {
-        //     for j in 0..phi_order.len() {
-        //         // let node_i = &mut phi_order[i];
-        //         // let node_j = &mut phi_order[j];
-        //         let mut visited = HashSet::new();
-        //         if i > j && self.has_as_pred(phi_order[i], phi_order[j], &mut visited) {
-        //             // println!("SWAP");
-        //             let tmp = phi_order[j];
-        //             phi_order[j] = phi_order[i];
-        //             phi_order[i] = tmp;
-        //         }
-        //     }
+        // for &phi in phis.iter() {
+        //     Self::phi_dfs(phi, &phis, &mut visited, &mut phi_order, &self.ir);
         // }
+
+        // phi_order.reverse();
+
+        for i in 0..phi_order.len() {
+            for j in 0..phi_order.len() {
+                // let node_i = &mut phi_order[i];
+                // let node_j = &mut phi_order[j];
+                // let mut visited = HashSet::new();
+                if i > j && self.ir.predecessors(phi_order[i]).contains(&phi_order[j]) {
+                    // println!("SWAP");
+                    let tmp = phi_order[j];
+                    phi_order[j] = phi_order[i];
+                    phi_order[i] = tmp;
+                }
+            }
+        }
 
         // println!("{:#?}", phi_order);
 
         let mut p_asm = vec![];
-        for phi in phi_order.iter().rev() {
+        for phi in phi_order.iter() {
             p_asm.extend(block.phi_asm[phi].clone());
         }
 
-        vec![p_asm, block.exit_asm.clone()].concat()
+        vec![block.work_asm.clone(), p_asm, block.exit_asm.clone()].concat()
     }
 
     fn linearlize(self) -> (Vec<Instruction>, HashMap<BlockId, usize>) {
@@ -183,14 +189,15 @@ impl<'a> InstSelect<'a> {
         }
 
         let block_exit = self.ir.block_exit(id).unwrap();
-        let block_asm = self.munch_control_node(block_exit);
+        let (work_asm, exit_asm) = self.munch_control_node(block_exit);
 
-        self.block_asm(id).exit_asm = block_asm;
+        self.block_asm(id).work_asm = work_asm;
+        self.block_asm(id).exit_asm = exit_asm;
 
         id
     }
 
-    fn munch_control_node(&mut self, id: NodeId) -> Vec<Instruction> {
+    fn munch_control_node(&mut self, id: NodeId) -> (Vec<Instruction>, Vec<Instruction>) {
         let mut effect_asm = vec![];
         if let Some(effect) = self.ir.side_effect(id) {
             effect_asm = self.munch_data_node(effect).1;
@@ -198,27 +205,38 @@ impl<'a> InstSelect<'a> {
 
         let node = self.ir.node(id).unwrap();
 
-        let asm = match node {
+        let (work_asm, exit_asm) = match node {
             Node::Return => {
                 let value = self.ir.lhs(id);
                 let (value_temp, value_asm) = self.munch_data_node(value);
 
-                vec![
-                    value_asm,
+                (
                     vec![
-                        Instruction::MOV(
+                        value_asm,
+                        vec![Instruction::MOV(
                             Location::register(MachineRegister::EAX),
                             Location::temp(value_temp),
-                        ),
-                        Instruction::RET(None),
-                    ],
-                ]
-                .concat()
+                        )],
+                    ]
+                    .concat(),
+                    vec![Instruction::RET(None)],
+                )
+                // vec![
+                //     value_asm,
+                //     vec![
+                //         Instruction::MOV(
+                //             Location::register(MachineRegister::EAX),
+                //             Location::temp(value_temp),
+                //         ),
+                //         Instruction::RET(None),
+                //     ],
+                // ]
+                // .concat()
             }
             Node::Jump => {
                 let target = self.ir.successors(id)[0];
                 let target_label = target;
-                vec![vec![Instruction::JMP(target_label)]].concat()
+                (vec![], vec![vec![Instruction::JMP(target_label)]].concat())
             }
             Node::CondJump => {
                 let condition = self.ir.predecessors(id)[0];
@@ -230,20 +248,29 @@ impl<'a> InstSelect<'a> {
                 let target_otherwise = self.ir.successors(id)[1];
                 let target_otherwise_label = target_otherwise;
 
-                vec![
+                (
                     cond_asm,
                     vec![Instruction::CJMP(
                         Location::temp(cond_temp),
                         target_then_label,
                         target_otherwise_label,
                     )],
-                ]
-                .concat()
+                )
+                // vec![
+                //     cond_asm,
+                //     vec![Instruction::CJMP(
+                //         Location::temp(cond_temp),
+                //         target_then_label,
+                //         target_otherwise_label,
+                //     )],
+                // ]
+                // .concat()
             }
             _ => unreachable!("Not a control node"),
         };
 
-        vec![effect_asm, asm].concat()
+        (vec![effect_asm, work_asm].concat(), exit_asm)
+        // vec![effect_asm, asm].concat()
     }
 
     fn munch_data_node(&mut self, id: NodeId) -> (Temp, Vec<Instruction>) {
@@ -443,6 +470,8 @@ impl<'a> InstSelect<'a> {
                         ]
                         .concat(),
                     );
+
+                    self.block_asm(self.ir.block(*pred)).phi_order.push(id);
                 }
 
                 (self.phi_temp(id), vec![])
