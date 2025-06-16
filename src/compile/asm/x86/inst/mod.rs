@@ -164,8 +164,8 @@ impl<'a> InstSelect<'a> {
                     effect_asm = self.munch_data_node(effect).1;
                 }
 
-                let rhs = self.ir.rhs(id);
-                let (value_temp, value_asm) = self.munch_data_node(rhs);
+                let value = self.ir.lhs(id);
+                let (value_temp, value_asm) = self.munch_data_node(value);
 
                 vec![
                     effect_asm,
