@@ -215,7 +215,7 @@ impl IrGraph {
                     return None;
                 }
 
-                Some(preds[1])
+                Some(preds[0])
             }
             Node::Phi => None, // TODO?
             Node::Binary(_) => {
