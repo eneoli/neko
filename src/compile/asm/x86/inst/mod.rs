@@ -1,10 +1,11 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+use chumsky::container::Seq;
 
 use crate::compile::{
     asm::x86::{Instruction, Location, MachineRegister},
     ir::graph::{
-        BlockId, IrGraph, NodeId,
-        node::{Node, binary::BinaryNodeOp, constant::ConstantNode},
+        node::{binary::BinaryNodeOp, constant::ConstantNode, Node}, BlockId, IrGraph, NodeId
     },
 };
 
@@ -19,19 +20,15 @@ pub fn select(ir: &IrGraph) -> (Vec<Instruction>, HashMap<BlockId, usize>) {
 #[derive(Clone, Debug)]
 struct BlockAsm {
     pub exit_asm: Vec<Instruction>,
-    pub phi_asm: Vec<Instruction>,
+    pub phi_asm: HashMap<NodeId, Vec<Instruction>>,
 }
 
 impl BlockAsm {
     pub fn new() -> Self {
         Self {
             exit_asm: vec![],
-            phi_asm: vec![],
+            phi_asm: HashMap::new(),
         }
-    }
-
-    pub fn linearlized(&self) -> Vec<Instruction> {
-        vec![self.phi_asm.clone(), self.exit_asm.clone()].concat()
     }
 }
 
@@ -40,15 +37,19 @@ struct InstSelect<'a> {
     next_temp: Temp,
     phi_temps: HashMap<NodeId, Temp>,
     block_asm: HashMap<BlockId, BlockAsm>,
+    next_label: Label,
 }
 
 impl<'a> InstSelect<'a> {
     pub fn new(ir: &'a IrGraph) -> Self {
+        let next_label = ir.blocks().iter().max().copied().unwrap_or(0) + 1;
+
         Self {
             ir,
             next_temp: 0,
             phi_temps: HashMap::new(),
             block_asm: HashMap::new(),
+            next_label,
         }
     }
 
@@ -87,15 +88,53 @@ impl<'a> InstSelect<'a> {
         self.linearlize()
     }
 
+    fn phi_dfs(
+        phi: NodeId,
+        all_phis: &[NodeId],
+        visited: &mut HashSet<NodeId>,
+        order: &mut Vec<NodeId>,
+        ir: &IrGraph,
+    ) {
+        if !visited.insert(phi) {
+            return;
+        }
+
+        for pred in ir.predecessors(phi).clone() {
+            if all_phis.contains(&pred) {
+                Self::phi_dfs(pred, all_phis, visited, order, ir);
+            }
+        }
+
+        order.push(phi);
+    }
+
+    pub fn linearlize_block(&self, block: &BlockAsm) -> Vec<Instruction> {
+        let phis: Vec<NodeId> = block.phi_asm.keys().copied().collect();
+
+        let mut visited = HashSet::new();
+        let mut phi_order = Vec::new();
+
+        for &phi in phis.iter() {
+            Self::phi_dfs(phi, &phis, &mut visited, &mut phi_order, &self.ir);
+        }
+
+        let mut p_asm = vec![];
+        for phi in phi_order.iter().rev() {
+            p_asm.extend(block.phi_asm[phi].clone());
+        }
+
+        vec![p_asm, block.exit_asm.clone()].concat()
+    }
+
     fn linearlize(self) -> (Vec<Instruction>, HashMap<BlockId, usize>) {
         let mut instructions = vec![];
         let mut blocks = HashMap::new();
 
         instructions.push(Instruction::JMP(self.ir.start()));
-        for (label, block) in self.block_asm.into_iter() {
-            blocks.insert(label, instructions.len());
-            instructions.push(Instruction::Label(label));
-            instructions.extend(block.linearlized());
+        for (label, block) in self.block_asm.iter() {
+            blocks.insert(*label, instructions.len());
+            instructions.push(Instruction::Label(*label));
+            instructions.extend(self.linearlize_block(&block));
         }
 
         (instructions, blocks)
@@ -297,6 +336,9 @@ impl<'a> InstSelect<'a> {
                 let (otherwise_temp, otherwise_asm) = self.munch_data_node(otherwise);
 
                 let temp = self.fresh_temp();
+                let then_label = self.label();
+                let otherwise_label = self.label();
+                let next_label = self.label();
 
                 (
                     temp,
@@ -305,7 +347,15 @@ impl<'a> InstSelect<'a> {
                         then_asm,
                         otherwise_asm,
                         vec![
-                            // TODO
+                            Instruction::CJMP(Location::temp(cond_temp), then_label, otherwise_label),
+                            Instruction::Label(then_label),
+                            Instruction::MOV(Location::temp(temp), Location::temp(then_temp)),
+                            Instruction::JMP(next_label),
+                            Instruction::Label(otherwise_label),
+                            Instruction::MOV(Location::temp(temp), Location::temp(otherwise_temp)),
+                            // Instruction::JMP(next_label),
+                            Instruction::Label(next_label),
+
                         ],
                     ]
                     .concat(),
@@ -331,8 +381,8 @@ impl<'a> InstSelect<'a> {
                     let value = self.ir.predecessors(id)[i];
                     let (value_temp, value_asm) = self.munch_data_node(value);
 
-                    self.block_asm(self.ir.block(*pred)).phi_asm.splice(
-                        0..0,
+                    self.block_asm(self.ir.block(*pred)).phi_asm.insert(
+                        id,
                         vec![
                             value_asm,
                             vec![Instruction::MOV(
@@ -375,7 +425,14 @@ impl<'a> InstSelect<'a> {
     fn is_phi_set(&self, phi: NodeId) -> bool {
         self.phi_temps.contains_key(&phi)
     }
+    
+    fn label(&mut self) -> Label {
+        let label = self.next_label;
+        self.next_label = self.next_label + 1;
 
+        label
+    }
+    
     fn dependent_phis(&self, id: NodeId) -> Vec<NodeId> {
         let succs = self.ir.successors(id);
         let mut phis = vec![];
