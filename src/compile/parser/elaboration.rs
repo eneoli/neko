@@ -4,11 +4,12 @@
 ///
 use std::marker::PhantomData;
 
-use crate::compile::ast::{
-    Ast, Elaborated, FunctionDecl, Parsed, PhaseExpr, PhaseStmt, desugared, parsed,
+use crate::compile::{
+    ast::{Ast, Elaborated, FunctionDecl, Parsed, PhaseExpr, PhaseStmt, desugared, parsed},
+    semantic::SemanticError,
 };
 
-pub fn elab(ast: Ast<Parsed>) -> Ast<Elaborated> {
+pub fn elab(ast: Ast<Parsed>) -> Result<Ast<Elaborated>, SemanticError> {
     let Ast {
         main:
             FunctionDecl {
@@ -22,29 +23,37 @@ pub fn elab(ast: Ast<Parsed>) -> Ast<Elaborated> {
         ..
     } = ast;
 
-    Ast {
+    let mut new_body = vec![];
+    for stmt in body.into_iter() {
+        let new_stmt = elab_stmt(stmt)?;
+        new_body.extend(new_stmt);
+    }
+
+    let ast = Ast {
         main: FunctionDecl {
             ty,
             name,
             args,
-            body: body.into_iter().flat_map(elab_stmt).collect(),
+            body: new_body,
             span,
         },
         _marker: PhantomData,
-    }
+    };
+
+    Ok(ast)
 }
 
-fn elab_stmt(stmt: parsed::Stmt) -> Vec<desugared::Stmt> {
-    match stmt {
+fn elab_stmt(stmt: parsed::Stmt) -> Result<Vec<desugared::Stmt>, SemanticError> {
+    let stmt = match stmt {
         parsed::Stmt::Decl(ty, name, None, span) => {
             vec![desugared::Stmt::Decl(ty, name, span)]
         }
         parsed::Stmt::Decl(ty, name, Some(init), span) => vec![
             desugared::Stmt::Decl(ty, name.clone(), span.clone()),
-            desugared::Stmt::Assign(name, elab_expr(init), span),
+            desugared::Stmt::Assign(name, elab_expr(init)?, span),
         ],
         parsed::Stmt::Assign(name, op, rhs, span) => {
-            let rhs = elab_expr(rhs);
+            let rhs = elab_expr(rhs)?;
 
             let expr = match op {
                 parsed::AssignOp::Eq => rhs,
@@ -58,29 +67,57 @@ fn elab_stmt(stmt: parsed::Stmt) -> Vec<desugared::Stmt> {
             vec![desugared::Stmt::Assign(name, expr, span)]
         }
         parsed::Stmt::Block(stmts) => vec![desugared::Stmt::Block(
-            stmts.into_iter().flat_map(elab_stmt).collect(),
+            stmts
+                .into_iter()
+                .map(elab_stmt)
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .flatten()
+                .collect(),
         )],
         parsed::Stmt::For(init, cond, step, body) => {
             vec![desugared::Stmt::For(
-                init.map(|stmt| elab_stmt(*stmt)),
-                elab_expr(cond),
-                step.map(|stmt| compound(elab_stmt(*stmt)).boxed()),
-                compound(elab_stmt(*body)).boxed(),
+                init.map(|stmt| elab_stmt(*stmt)).transpose()?,
+                elab_expr(cond)?,
+                step.map(|stmt| elab_stmt(*stmt))
+                    .transpose()?
+                    .map(compound)
+                    .map(Box::new),
+                Box::new(compound(elab_stmt(*body)?)),
             )]
+
+            // vec![desugared::Stmt::For(
+            //     init.map(|stmt| elab_stmt(*stmt)).transpose()?,
+            //     elab_expr(cond)?,
+            //     step.map(|stmt| compound(elab_stmt(*stmt)?).boxed()),
+            //     compound(elab_stmt(*body)?).boxed(),
+            // )]
         }
         parsed::Stmt::While(expr, stmt) => vec![desugared::Stmt::While(
-            elab_expr(expr),
-            compound(elab_stmt(*stmt)).boxed(),
+            elab_expr(expr)?,
+            compound(elab_stmt(*stmt)?).boxed(),
         )],
-        parsed::Stmt::If(cond, then, otherwise) => vec![desugared::Stmt::If(
-            elab_expr(cond),
-            compound(elab_stmt(*then)).boxed(),
-            otherwise.map(|stmt| compound(elab_stmt(*stmt)).boxed()),
-        )],
-        parsed::Stmt::Return(rhs, span) => vec![desugared::Stmt::Return(elab_expr(rhs), span)],
+        parsed::Stmt::If(cond, then, otherwise) => {
+            vec![desugared::Stmt::If(
+                elab_expr(cond)?,
+                Box::new(compound(elab_stmt(*then)?)),
+                match otherwise {
+                    Some(stmt) => Some(Box::new(compound(elab_stmt(*stmt)?))),
+                    None => None,
+                },
+            )]
+            //     vec![desugared::Stmt::If(
+            //     elab_expr(cond)?,
+            //     compound(elab_stmt(*then)?).boxed(),
+            //     otherwise.map(|stmt| compound(elab_stmt(*stmt)?).boxed()),
+            // )]
+        }
+        parsed::Stmt::Return(rhs, span) => vec![desugared::Stmt::Return(elab_expr(rhs)?, span)],
         parsed::Stmt::Break(span) => vec![desugared::Stmt::Break(span)],
         parsed::Stmt::Continue(span) => vec![desugared::Stmt::Continue(span)],
-    }
+    };
+
+    Ok(stmt)
 }
 
 fn compound(stmts: Vec<desugared::Stmt>) -> desugared::Stmt {
@@ -91,14 +128,14 @@ fn compound(stmts: Vec<desugared::Stmt>) -> desugared::Stmt {
     desugared::Stmt::Block(stmts)
 }
 
-fn elab_expr(expr: parsed::Expr) -> desugared::Expr {
-    match expr {
-        parsed::Expr::Int(value, span) => desugared::Expr::Int(value.parse().unwrap(), span),
+fn elab_expr(expr: parsed::Expr) -> Result<desugared::Expr, SemanticError> {
+    let expr = match expr {
+        parsed::Expr::Int(value, span) => desugared::Expr::Int(value.parse()?, span),
         parsed::Expr::Bool(value, span) => desugared::Expr::Bool(value, span),
         parsed::Expr::Ident(name, span) => desugared::Expr::Ident(name, span),
         parsed::Expr::Unary(op, rhs) => {
             let rhs_span = rhs.span();
-            let rhs = elab_expr(*rhs).boxed();
+            let rhs = elab_expr(*rhs)?.boxed();
             let true_expr = desugared::Expr::Bool(true, rhs_span.clone()).boxed();
             let false_expr = desugared::Expr::Bool(false, rhs_span.clone()).boxed();
 
@@ -118,8 +155,8 @@ fn elab_expr(expr: parsed::Expr) -> desugared::Expr {
         }
         parsed::Expr::Binary(op, lhs, rhs) => {
             let lhs_span = lhs.span();
-            let lhs = elab_expr(*lhs).boxed();
-            let rhs = elab_expr(*rhs).boxed();
+            let lhs = elab_expr(*lhs)?.boxed();
+            let rhs = elab_expr(*rhs)?.boxed();
             let true_expr = desugared::Expr::Bool(true, lhs_span.clone()).boxed();
             let false_expr = desugared::Expr::Bool(false, lhs_span.clone()).boxed();
 
@@ -130,11 +167,13 @@ fn elab_expr(expr: parsed::Expr) -> desugared::Expr {
             }
         }
         parsed::Expr::Ternary(cond, then, otherwise) => desugared::Expr::Ternary(
-            elab_expr(*cond).boxed(),
-            elab_expr(*then).boxed(),
-            elab_expr(*otherwise).boxed(),
+            elab_expr(*cond)?.boxed(),
+            elab_expr(*then)?.boxed(),
+            elab_expr(*otherwise)?.boxed(),
         ),
-    }
+    };
+
+    Ok(expr)
 }
 
 fn elab_unary_op(op: parsed::UnaryOp) -> desugared::UnaryOp {

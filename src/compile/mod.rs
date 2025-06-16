@@ -94,7 +94,7 @@ impl Compiler {
             }
         };
 
-        Ok(elaboration::elab(ast))
+        Ok(elaboration::elab(ast)?)
     }
 
     fn transform(&mut self, ast: Ast<Elaborated>) -> Result<IrGraph, NekoError> {
