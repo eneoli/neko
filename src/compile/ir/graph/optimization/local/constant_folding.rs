@@ -79,10 +79,10 @@ impl ConstantFoldingOptimizer {
         let value = match op {
             BinaryNodeOp::Eq => a == b,
             BinaryNodeOp::NotEq => a != b,
-            BinaryNodeOp::Less => a < b,
-            BinaryNodeOp::LessEq => a <= b,
-            BinaryNodeOp::Greater => a > b,
-            BinaryNodeOp::GreaterEq => a >= b,
+            BinaryNodeOp::Less => (a as i32) < (b as i32),
+            BinaryNodeOp::LessEq => (a as i32) <= (b as i32),
+            BinaryNodeOp::Greater => (a as i32) > (b as i32),
+            BinaryNodeOp::GreaterEq => (a as i32) >= (b as i32),
             _ => unreachable!(),
         };
 

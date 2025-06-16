@@ -109,6 +109,26 @@ impl<'a> InstSelect<'a> {
         order.push(phi);
     }
 
+    fn has_as_pred(&self, id: NodeId, pred: NodeId, visited: &mut HashSet<NodeId>) -> bool {
+        if !visited.insert(id) {
+            return false;
+        }
+
+        for some_pred in self.ir.predecessors(id) {
+            if some_pred == pred {
+                return true;
+            }
+        }
+        
+        for some_pred in self.ir.predecessors(id) {
+            if self.has_as_pred(some_pred, pred, visited)  {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
     pub fn linearlize_block(&self, block: &BlockAsm) -> Vec<Instruction> {
         let phis: Vec<NodeId> = block.phi_asm.keys().copied().collect();
 
@@ -118,6 +138,22 @@ impl<'a> InstSelect<'a> {
         for &phi in phis.iter() {
             Self::phi_dfs(phi, &phis, &mut visited, &mut phi_order, &self.ir);
         }
+
+        // for i in 0..phi_order.len() {
+        //     for j in 0..phi_order.len() {
+        //         // let node_i = &mut phi_order[i];
+        //         // let node_j = &mut phi_order[j];
+        //         let mut visited = HashSet::new();
+        //         if i > j && self.has_as_pred(phi_order[i], phi_order[j], &mut visited) {
+        //             // println!("SWAP");
+        //             let tmp = phi_order[j];
+        //             phi_order[j] = phi_order[i];
+        //             phi_order[i] = tmp;
+        //         }
+        //     }
+        // }
+
+        // println!("{:#?}", phi_order);
 
         let mut p_asm = vec![];
         for phi in phi_order.iter().rev() {
@@ -162,13 +198,12 @@ impl<'a> InstSelect<'a> {
 
         let node = self.ir.node(id).unwrap();
 
-        match node {
+        let asm = match node {
             Node::Return => {
                 let value = self.ir.lhs(id);
                 let (value_temp, value_asm) = self.munch_data_node(value);
 
                 vec![
-                    effect_asm,
                     value_asm,
                     vec![
                         Instruction::MOV(
@@ -183,7 +218,7 @@ impl<'a> InstSelect<'a> {
             Node::Jump => {
                 let target = self.ir.successors(id)[0];
                 let target_label = target;
-                vec![effect_asm, vec![Instruction::JMP(target_label)]].concat()
+                vec![vec![Instruction::JMP(target_label)]].concat()
             }
             Node::CondJump => {
                 let condition = self.ir.predecessors(id)[0];
@@ -206,7 +241,9 @@ impl<'a> InstSelect<'a> {
                 .concat()
             }
             _ => unreachable!("Not a control node"),
-        }
+        };
+
+        vec![effect_asm, asm].concat()
     }
 
     fn munch_data_node(&mut self, id: NodeId) -> (Temp, Vec<Instruction>) {
