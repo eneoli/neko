@@ -18,7 +18,6 @@ pub type Label = usize;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum MachineRegister {
     EBX,
-    ECX,
     ESI,
     EDI,
     R8D,
@@ -30,6 +29,7 @@ pub enum MachineRegister {
     R14D,
 
     // special/reserved
+    ECX,
     RBP,
     RSP,
     EAX,
@@ -41,22 +41,22 @@ impl MachineRegister {
     pub const SPILL: MachineRegister = MachineRegister::R15D;
 
     pub fn num_free_regs() -> usize {
-        11
+        10
     }
 
     pub fn from_index(idx: u64) -> Option<MachineRegister> {
         match idx {
             0 => Some(MachineRegister::EBX),
-            1 => Some(MachineRegister::ECX),
-            2 => Some(MachineRegister::ESI),
-            3 => Some(MachineRegister::EDI),
-            4 => Some(MachineRegister::R8D),
-            5 => Some(MachineRegister::R9D),
-            6 => Some(MachineRegister::R10D),
-            7 => Some(MachineRegister::R11D),
-            8 => Some(MachineRegister::R12D),
-            9 => Some(MachineRegister::R13D),
-            10 => Some(MachineRegister::R14D),
+            // 1 => Some(MachineRegister::ECX),
+            1 => Some(MachineRegister::ESI),
+            2 => Some(MachineRegister::EDI),
+            3 => Some(MachineRegister::R8D),
+            4 => Some(MachineRegister::R9D),
+            5 => Some(MachineRegister::R10D),
+            6 => Some(MachineRegister::R11D),
+            7 => Some(MachineRegister::R12D),
+            8 => Some(MachineRegister::R13D),
+            9 => Some(MachineRegister::R14D),
             _ => None,
         }
     }
