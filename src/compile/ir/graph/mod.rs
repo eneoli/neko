@@ -52,9 +52,7 @@ impl IrGraph {
     }
 
     pub fn blocks(&self) -> Vec<NodeId> {
-        let mut blocks: Vec<_> = self.block.values()
-            .copied()
-            .collect();
+        let mut blocks: Vec<_> = self.block.values().copied().collect();
 
         blocks.sort();
         blocks.dedup();
@@ -121,7 +119,7 @@ impl IrGraph {
         self.nodes.insert(id, node);
     }
 
-    pub fn remove_node(&mut self, id: NodeId) {      
+    pub fn remove_node(&mut self, id: NodeId) {
         debug_assert_eq!(
             0,
             self.successors[&id].len(),
@@ -207,7 +205,7 @@ impl IrGraph {
                     return None;
                 }
 
-                Some(preds[0])                
+                Some(preds[0])
             }
             Node::CondJump => {
                 let preds = self.predecessors(id);
@@ -219,7 +217,31 @@ impl IrGraph {
 
                 Some(preds[1])
             }
-            _ => todo!(),
+            Node::Phi => None, // TODO?
+            Node::Binary(_) => {
+                let preds = self.predecessors(id);
+                debug_assert!(preds.len() == 2 || preds.len() == 3);
+
+                if preds.len() == 2 {
+                    return None;
+                }
+
+                Some(preds[2])
+            }
+            Node::Ternary => None, // TODO
+            Node::Block => None,
+            Node::Undef => None,
+            Node::Constant(_) => {
+                let preds = self.predecessors(id);
+                debug_assert!(preds.len() == 0 || preds.len() == 1);
+
+                if preds.len() == 0 {
+                    return None;
+                }
+
+                Some(preds[0])
+
+            },
         }
     }
 

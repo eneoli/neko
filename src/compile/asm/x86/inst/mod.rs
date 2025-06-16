@@ -155,15 +155,15 @@ impl<'a> InstSelect<'a> {
     }
 
     fn munch_control_node(&mut self, id: NodeId) -> Vec<Instruction> {
+        let mut effect_asm = vec![];
+        if let Some(effect) = self.ir.side_effect(id) {
+            effect_asm = self.munch_data_node(effect).1;
+        }
+
         let node = self.ir.node(id).unwrap();
 
         match node {
             Node::Return => {
-                let mut effect_asm = vec![];
-                if let Some(effect) = self.ir.side_effect(id) {
-                    effect_asm = self.munch_data_node(effect).1;
-                }
-
                 let value = self.ir.lhs(id);
                 let (value_temp, value_asm) = self.munch_data_node(value);
 
@@ -183,12 +183,6 @@ impl<'a> InstSelect<'a> {
             Node::Jump => {
                 let target = self.ir.successors(id)[0];
                 let target_label = target;
-
-                let mut effect_asm = vec![];
-                if let Some(effect) = self.ir.side_effect(id) {
-                    effect_asm = self.munch_data_node(effect).1;
-                }
-
                 vec![effect_asm, vec![Instruction::JMP(target_label)]].concat()
             }
             Node::CondJump => {
@@ -216,6 +210,11 @@ impl<'a> InstSelect<'a> {
     }
 
     fn munch_data_node(&mut self, id: NodeId) -> (Temp, Vec<Instruction>) {
+        let mut effect_asm = vec![];
+        if let Some(effect) = self.ir.side_effect(id) {
+            effect_asm = self.munch_data_node(effect).1;
+        }
+
         let node = self.ir.node(id).unwrap();
 
         let munch_const = |x: &ConstantNode| match x {
@@ -387,7 +386,9 @@ impl<'a> InstSelect<'a> {
 
                 for (i, pred) in self.ir.predecessors(block).iter().enumerate() {
                     if self.ir.predecessors(id).len() < i + 1 {
-                        println!("[WARNING] Phi has less predecessors then the block containing it.");
+                        println!(
+                            "[WARNING] Phi has less predecessors then the block containing it."
+                        );
                         break;
                     }
 
@@ -423,7 +424,7 @@ impl<'a> InstSelect<'a> {
         //     ));
         // }
 
-        (temp, vec![asm].concat())
+        (temp, vec![effect_asm, asm].concat())
     }
 
     fn phi_temp(&mut self, id: NodeId) -> Temp {
