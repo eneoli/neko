@@ -43,6 +43,8 @@ struct InstSelect<'a> {
     phi_temps: HashMap<NodeId, Temp>,
     block_asm: HashMap<BlockId, BlockAsm>,
     next_label: Label,
+    visited_data_nodes: HashMap<NodeId, Temp>,
+    visited_control_nodes: HashSet<NodeId>,
 }
 
 impl<'a> InstSelect<'a> {
@@ -55,6 +57,8 @@ impl<'a> InstSelect<'a> {
             phi_temps: HashMap::new(),
             block_asm: HashMap::new(),
             next_label,
+            visited_data_nodes: HashMap::new(),
+            visited_control_nodes: HashSet::new(),
         }
     }
 
@@ -62,6 +66,9 @@ impl<'a> InstSelect<'a> {
         let temp = self.next_temp;
         self.next_temp = self.next_temp + 1;
 
+        if temp == 3 {
+            // panic!("wut");
+        }
         temp
     }
 
@@ -134,8 +141,6 @@ impl<'a> InstSelect<'a> {
     }
 
     pub fn linearlize_block(&self, block: &BlockAsm) -> Vec<Instruction> {
-        let phis: Vec<NodeId> = block.phi_asm.keys().copied().collect();
-
         // let mut visited = HashSet::new();
         let mut phi_order: Vec<_> = block.phi_order.iter().rev().copied().collect();
 
@@ -191,13 +196,17 @@ impl<'a> InstSelect<'a> {
         let block_exit = self.ir.block_exit(id).unwrap();
         let (work_asm, exit_asm) = self.munch_control_node(block_exit);
 
-        self.block_asm(id).work_asm = work_asm;
+        self.block_asm(id).work_asm.extend(work_asm);
         self.block_asm(id).exit_asm = exit_asm;
 
         id
     }
 
     fn munch_control_node(&mut self, id: NodeId) -> (Vec<Instruction>, Vec<Instruction>) {
+        if !self.visited_control_nodes.insert(id) {
+            return (vec![], vec![]);
+        }
+
         let mut effect_asm = vec![];
         if let Some(effect) = self.ir.side_effect(id) {
             effect_asm = self.munch_data_node(effect).1;
@@ -274,6 +283,26 @@ impl<'a> InstSelect<'a> {
     }
 
     fn munch_data_node(&mut self, id: NodeId) -> (Temp, Vec<Instruction>) {
+        // if id == 18 {
+        //     // println!("Ho!");
+        // }
+        let mut temp;
+        let mut fresh_temp = false;
+        if self.visited_data_nodes.contains_key(&id) {
+            temp = self.visited_data_nodes[&id];
+            // return (temp, vec![]);
+        } else {
+            fresh_temp = true;
+            if let Node::Phi = self.ir.node(id).unwrap() {
+                temp = self.phi_temp(id);
+            } else {
+                // panic!("{:#?}", self.ir.node(id));
+                temp = self.fresh_temp();
+            }
+        }
+        self.visited_data_nodes.insert(id, temp);
+
+
         let mut effect_asm = vec![];
         if let Some(effect) = self.ir.side_effect(id) {
             effect_asm = self.munch_data_node(effect).1;
@@ -288,21 +317,16 @@ impl<'a> InstSelect<'a> {
         };
 
         let (temp, asm) = match node {
-            Node::Constant(value) => {
-                let temp = self.fresh_temp();
-                (
-                    temp.clone(),
-                    vec![Instruction::MOV(Location::temp(temp), munch_const(value))],
-                )
-            }
+            Node::Constant(value) => (
+                temp.clone(),
+                vec![Instruction::MOV(Location::temp(temp), munch_const(value))],
+            ),
             Node::Binary(op) => {
                 let lhs = self.ir.lhs(id);
                 let rhs = self.ir.rhs(id);
 
                 let (lhs_temp, lhs_asm) = self.munch_data_node(lhs);
                 let (rhs_temp, rhs_asm) = self.munch_data_node(rhs);
-
-                let temp = self.fresh_temp();
 
                 let asm = match op {
                     BinaryNodeOp::Add => vec![
@@ -387,6 +411,10 @@ impl<'a> InstSelect<'a> {
                     ],
                 };
 
+                // println!("{:#?}", lhs_asm);
+                // println!("{:#?}", rhs_asm);
+                // println!("{:#?}", asm);
+
                 (temp, vec![lhs_asm, rhs_asm, asm].concat())
             }
             Node::Ternary => {
@@ -399,7 +427,6 @@ impl<'a> InstSelect<'a> {
                 let (then_temp, then_asm) = self.munch_data_node(then);
                 let (otherwise_temp, otherwise_asm) = self.munch_data_node(otherwise);
 
-                let temp = self.fresh_temp();
                 let then_label = self.label();
                 let otherwise_label = self.label();
                 let next_label = self.label();
@@ -433,15 +460,17 @@ impl<'a> InstSelect<'a> {
                 )
             }
             Node::Phi => {
-                if self.is_phi_set(id) {
-                    return (self.phi_temp(id), vec![]);
+                if !fresh_temp {
+                    return (temp, vec![]);
                 }
 
                 // if self.ir.predecessors(id).len() == 0 {
                 //     return (self.phi_temp(id), vec![]);
                 // }
 
-                let phi_temp = self.phi_temp(id);
+                let phi_temp = temp;
+                // let phi_temp: usize = self.phi_temp(id);
+                // temp = phi_temp;
                 let block = self.ir.block(id);
                 // debug_assert_eq!(
                 //     self.ir.predecessors(block).len(),
@@ -457,12 +486,18 @@ impl<'a> InstSelect<'a> {
                     }
 
                     let value = self.ir.predecessors(id)[i];
+                    // println!("Phi: {id}, value: {value}");
                     let (value_temp, value_asm) = self.munch_data_node(value);
+                    // println!("{:?}", value_asm);
+
+                    self.block_asm(self.ir.block(*pred))
+                        .work_asm
+                        .extend(value_asm);
 
                     self.block_asm(self.ir.block(*pred)).phi_asm.insert(
                         id,
                         vec![
-                            value_asm,
+                            // value_asm,
                             vec![Instruction::MOV(
                                 Location::temp(phi_temp),
                                 Location::temp(value_temp),
@@ -471,12 +506,14 @@ impl<'a> InstSelect<'a> {
                         .concat(),
                     );
 
+                    // println!("Phi: {id}, MOV, {phi_temp}, {value_temp}");
+
                     self.block_asm(self.ir.block(*pred)).phi_order.push(id);
                 }
 
-                (self.phi_temp(id), vec![])
+                (temp, vec![])
             }
-            Node::Undef => (self.fresh_temp(), vec![]),
+            Node::Undef => (temp, vec![]),
             _ => unreachable!("Not a data node: {id}, {:#?}", self.ir.node(id)),
         };
 
@@ -490,6 +527,7 @@ impl<'a> InstSelect<'a> {
         //     ));
         // }
 
+        self.visited_data_nodes.insert(id, temp);
         (temp, vec![effect_asm, asm].concat())
     }
 

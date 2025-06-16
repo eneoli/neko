@@ -268,6 +268,9 @@ impl Asm {
 pub fn generate_assembly(ir: &IrGraph) -> String {
     let instructions = inst::select(ir);
     println!("Inst select done");
+    // for inst in instructions.0.iter() {
+    //     println!("{:?}", inst);
+    // }
     // println!("{:#?}", instructions);
     let asm = regalloc::allocate(instructions);
     println!("Allocation done");

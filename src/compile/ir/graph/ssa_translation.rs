@@ -419,7 +419,12 @@ impl SsaTranslation {
 
         let preds = self.graph.predecessors(phi);
 
-        if preds.len() >= 2 {
+        let real_preds: Vec<_> = self.graph.predecessors(phi)
+            .into_iter()
+            .filter(|x| *x != phi)
+            .collect();
+
+        if real_preds.len() >= 2 {
             return phi;
         }
 
@@ -429,10 +434,10 @@ impl SsaTranslation {
         }
 
         // Only one operand
-        let operand = preds[0];
+        let operand = real_preds[0];
         let phi_users = self.graph.successors(phi);
         self.reroute(phi, operand);
-        self.graph.remove_node(phi);
+        // self.graph.remove_node(phi);
 
         // Remove recursive
         for user in phi_users {
