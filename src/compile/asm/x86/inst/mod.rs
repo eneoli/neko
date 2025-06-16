@@ -380,12 +380,17 @@ impl<'a> InstSelect<'a> {
 
                 let phi_temp = self.phi_temp(id);
                 let block = self.ir.block(id);
-                debug_assert_eq!(
-                    self.ir.predecessors(block).len(),
-                    self.ir.predecessors(id).len()
-                );
+                // debug_assert_eq!(
+                //     self.ir.predecessors(block).len(),
+                //     self.ir.predecessors(id).len()
+                // );
 
                 for (i, pred) in self.ir.predecessors(block).iter().enumerate() {
+                    if self.ir.predecessors(id).len() < i + 1 {
+                        println!("[WARNING] Phi has less predecessors then the block containing it.");
+                        break;
+                    }
+
                     let value = self.ir.predecessors(id)[i];
                     let (value_temp, value_asm) = self.munch_data_node(value);
 

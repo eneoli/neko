@@ -402,7 +402,7 @@ impl SsaTranslation {
                 continue; // Dead
             }
 
-            if !self.graph.predecessors(phi).contains(&operand) && operand != phi {
+            if !self.graph.predecessors(phi).contains(&operand) {
                 self.graph.add_predecessor(phi, operand);
             }
         }
