@@ -209,13 +209,13 @@ impl IrGraph {
             }
             Node::CondJump => {
                 let preds = self.predecessors(id);
-                debug_assert!(preds.len() == 0 || preds.len() == 1);
+                debug_assert!(preds.len() == 1 || preds.len() == 2);
 
-                if preds.len() == 0 {
+                if preds.len() == 1 {
                     return None;
                 }
 
-                Some(preds[0])
+                Some(preds[1])
             }
             Node::Phi => None, // TODO?
             Node::Binary(_) => {
